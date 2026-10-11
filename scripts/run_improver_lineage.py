@@ -56,9 +56,9 @@ def sealed(path: Path, key: str) -> dict:
 class Books:
     """The ledger and the journal of one workspace; every request is written before anything else."""
 
-    def __init__(self, workspace: Path, ceiling: float):
+    def __init__(self, workspace: Path, ceiling: float, model: str = lineage.MODEL):
         workspace.mkdir(parents=True, exist_ok=True)
-        self.path, spent = workspace / "calls.jsonl", 0.0
+        self.path, spent, self.name = workspace / "calls.jsonl", 0.0, model
         if self.path.exists():
             for line in self.path.read_text(encoding="utf-8").splitlines():
                 cost = json.loads(line).get("cost_usd")
@@ -71,7 +71,7 @@ class Books:
                 handle.write(json.dumps({**label, **record}, sort_keys=True) + "\n")
                 handle.flush()
                 os.fsync(handle.fileno())
-        return lineage.Model(self.ledger, journal)
+        return lineage.Model(self.ledger, journal, model=self.name)
 
 
 def attempts(source: str, tasks: list, books: Books, label: str, parallel: int) -> list[dict]:
@@ -83,13 +83,14 @@ def attempts(source: str, tasks: list, books: Books, label: str, parallel: int) 
 
 
 def pilot(arguments) -> None:
-    books = Books(Path(arguments.workspace).resolve(), arguments.ceiling)
-    tasks = [(family, PILOT_TASKS + index) for family in lineage.DEVELOPMENT for index in range(arguments.tasks)]
+    books = Books(Path(arguments.workspace).resolve(), arguments.ceiling, arguments.model)
+    tasks = [(family, PILOT_TASKS + index) for family in arguments.family or lineage.DEVELOPMENT for index in range(arguments.tasks)]
     for path in arguments.improver:
         rows = attempts(Path(path).read_text(encoding="utf-8"), tasks, books, f"pilot:{Path(path).stem}", arguments.parallel)
         by_family = {family: round(sum(row["score"] for row in rows if row["family"] == family) / arguments.tasks, 4)
                      for family in lineage.DEVELOPMENT}
-        print(Path(path).stem, round(sum(row["score"] for row in rows) / len(rows), 4), by_family,
+        (books.path.parent / f"{Path(path).stem}.rows.json").write_text(json.dumps(rows), encoding="utf-8")
+        print(arguments.model, Path(path).stem, round(sum(row["score"] for row in rows) / len(rows), 4), by_family,
               "errors", [row["error"] for row in rows if row["error"]], "calls", sum(row["lm_calls"] for row in rows),
               f"spent {books.ledger.spent:.3f}", flush=True)
 
@@ -101,26 +102,27 @@ def plan(arguments) -> None:
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
     seed = lineage.SEED.read_text(encoding="utf-8")
     body = {
-        "schema": "genesis-improver-lineage-plan-v1", "name": arguments.name, "model": lineage.MODEL,
+        "schema": "genesis-improver-lineage-plan-v1", "name": arguments.name, "model": arguments.model,
         "seed_improver_sha256": digest_of(seed), "image": lineage.IMAGE,
         "object_budget": lineage.OBJECT_BUDGET, "meta_budget": lineage.META_BUDGET,
         "tasks_per_improver_evaluation": lineage.CHILDREN,
         "development_families": list(lineage.DEVELOPMENT), "held_out_families": list(lineage.HELD_OUT),
+        "far_families": list(lineage.FAR), "instances_per_task": {"shown": len(lineage.VISIBLE), "check": len(lineage.CHECK), "hidden": len(lineage.HIDDEN)},
         "generations": arguments.generations, "replicate": arguments.replicate,
         "self_application": ("generation g: the current improver is run on the task 'improver' with its own source as "
                              f"the initial program and {lineage.CHILDREN} development tasks numbered "
                              f"{META_TASKS} + 100 * (10 * replicate + g) + i, one per family in rotation; what it returns is "
                              "the candidate"),
         "comparison": (f"parent and candidate are each run once on {arguments.selection} tasks per development family, "
-                       f"numbered {SELECTION_TASKS} + 100 * (10 * replicate + g) + i, and scored by the host on the five hidden "
+                       f"numbered {SELECTION_TASKS} + 100 * (10 * replicate + g) + i, and scored by the host on the hidden "
                        "instances of each task"),
         "selection_tasks_per_family": arguments.selection,
-        "promotion_rule": {"margin": arguments.margin, "level": 0.05, "tie": 0.005,
-                           "text": "tasks won minus tasks lost at least the margin, a higher mean score, and an exact "
-                                   "one-sided sign test at the level; a candidate identical to its parent is not run"},
+        "promotion_rule": {"level": 0.05, "tie": 0.005,
+                           "text": "a higher mean score and an exact one-sided Wilcoxon signed-rank test over the "
+                                   "tasks at the level; a candidate identical to its parent is not run"},
         "after_a_rejection": "the parent stays and applies itself again on new tasks",
         "spending_ceiling_usd": arguments.ceiling,
-        "held_out_rule": ("held-out families are run only once the lineage is frozen, seed against final improver, "
+        "held_out_rule": ("held-out and far families are run only once the lineage is frozen, seed against final improver, "
                           "under a separate preregistration"),
         "claim_boundary": ("promotions on development families select improvers and prove nothing by themselves; no "
                            "outcome of a lineage establishes general recursive self-improvement"),
@@ -145,7 +147,7 @@ def generation(arguments) -> None:
         raise SystemExit("the planned generations are done")
     current = sealed(done[-1], "generation_digest")["current_after"] if done else "g0"
     source = (home / "improvers" / f"{current}.py").read_text(encoding="utf-8")
-    books = Books(Path(arguments.workspace).resolve(), frozen["spending_ceiling_usd"])
+    books = Books(Path(arguments.workspace).resolve(), frozen["spending_ceiling_usd"], frozen["model"])
     base = 100 * (10 * frozen["replicate"] + number)
     families = lineage.DEVELOPMENT
     children = [(families[(number + index) % len(families)], META_TASKS + base + index) for index in range(lineage.CHILDREN)]
@@ -170,11 +172,11 @@ def generation(arguments) -> None:
             child_rows = attempts(candidate, tasks, books, f"g{number}:candidate", arguments.parallel)
             rule = frozen["promotion_rule"]
             comparison = lineage.compared(parent_rows, child_rows, tie=rule["tie"])
-            won = lineage.promoted(comparison, margin=rule["margin"], level=rule["level"])
+            won = lineage.promoted(comparison, level=rule["level"])
             if won:
                 (home / "improvers" / f"g{number}.py").write_text(candidate, encoding="utf-8")
             body.update(comparison=comparison, promoted=won, current_after=f"g{number}" if won else current,
-                        parent_rows=parent_rows, candidate_rows=child_rows, reason=None)
+                        parent_rows=lineage.summaries(parent_rows), candidate_rows=lineage.summaries(child_rows), reason=None)
     except (BudgetExhausted, ModelUnavailable) as error:
         raise SystemExit(f"stopped, nothing sealed: {type(error).__name__}: {error}")
     body["spent_usd_so_far"] = round(books.ledger.spent, 4)
@@ -192,6 +194,7 @@ def main() -> None:
         if name == "pilot":
             command.add_argument("--improver", nargs="+", required=True)
             command.add_argument("--tasks", type=int, default=2)
+            command.add_argument("--family", nargs="*")
             command.add_argument("--ceiling", type=float, default=0.5)
         else:
             command.add_argument("--name", required=True)
@@ -199,8 +202,9 @@ def main() -> None:
             command.add_argument("--generations", type=int, default=6)
             command.add_argument("--replicate", type=int, default=0)
             command.add_argument("--selection", type=int, default=5)
-            command.add_argument("--margin", type=int, default=5)
             command.add_argument("--ceiling", type=float, default=6.0)
+        if name != "generation":
+            command.add_argument("--model", default=lineage.MODEL)
         if name != "plan":
             command.add_argument("--workspace", required=True)
             command.add_argument("--parallel", type=int, default=6)

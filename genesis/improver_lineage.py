@@ -31,18 +31,21 @@ IMAGE = "python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784
 RUNTIME = Path(__file__).with_name("improver_runtime.py")
 SEED = Path(__file__).with_name("improver_seed.py")
 MODEL = "anthropic/claude-haiku-5.5"
-OBJECT_BUDGET = {"lm_calls": 6, "evaluations": 10, "seconds": 900}
-CHILDREN = 4
-META_BUDGET = {"lm_calls": 6 + 6 * CHILDREN * OBJECT_BUDGET["lm_calls"], "evaluations": 6, "seconds": 7200}
-VISIBLE, CHECK, HIDDEN = (0, 1, 2), (3, 4), (5, 6, 7, 8, 9)
-DEVELOPMENT = ("binpack", "coloring", "qap", "regression", "tardiness", "tsp")
-HELD_OUT = ("cluster", "jobshop", "knapsack", "maxcut", "sequence", "setcover")
+OBJECT_BUDGET = {"lm_calls": 3, "evaluations": 10, "seconds": 600}
+CHILDREN = 6
+META_BUDGET = {"lm_calls": 12 + 6 * CHILDREN * OBJECT_BUDGET["lm_calls"], "evaluations": 6, "seconds": 7200}
+STRIDE, VISIBLE, CHECK, HIDDEN = 100, tuple(range(4)), tuple(range(10, 16)), tuple(range(20, 40))
+# Families by role. "retired" ones carried the first two lineages and told improvers apart on nothing;
+# "far" ones are the optimisation families those lineages never used.
+DEVELOPMENT = ("automaton", "cellular", "classify", "forecast", "regression", "transform")
+HELD_OUT = ("completion", "markov", "relation", "sequence")
+FAR = ("cluster", "jobshop", "knapsack", "maxcut", "setcover")
 
 
 def seeds(task: int, offsets: Sequence[int]) -> list[int]:
-    """Instances of one task. A task owns ten seeds: three shown, two for the improver's own check
-    of improvers, five kept by the host."""
-    return [task * 10 + offset for offset in offsets]
+    """Instances of one task. A task owns a hundred seeds: four are shown, six serve an improver's own
+    check of improvers, twenty are kept by the host."""
+    return [task * STRIDE + offset for offset in offsets]
 
 
 def object_spec(family: str, task: int) -> dict:
@@ -166,7 +169,7 @@ def score(solution: str | None, family: str, instances: Sequence[int], *, comman
     try:
         done = subprocess.run(list(command) if command else docker_argv(name, "score", cpus=1),
                               input=json.dumps({"source": solution, "family": family, "seeds": list(instances)}),
-                              capture_output=True, text=True, timeout=120)
+                              capture_output=True, text=True, timeout=60 + 8 * len(instances))
         rows = json.loads(done.stdout)
         return round(sum(row["quality"] for row in rows) / len(rows), 6)
     except (subprocess.TimeoutExpired, ValueError, KeyError, TypeError, ZeroDivisionError):
@@ -181,13 +184,39 @@ def attempt(source: str, family: str, task: int, model: Callable, **options) -> 
     return {"family": family, "task": task, "score": score(ran["solution"], family, seeds(task, HIDDEN),
                                                            command=options.get("score_command")),
             "error": ran["error"], "lm_calls": ran["lm_calls"], "seconds": ran["seconds"],
-            "solution_digest": digest_of(ran["solution"]) if ran["solution"] else None}
+            "solution_digest": digest_of(ran["solution"]) if ran["solution"] else None, "solution": ran["solution"]}
+
+
+def summaries(rows: Sequence[Mapping]) -> list[dict]:
+    """Attempts without the programs they produced, for a sealed record."""
+    return [{key: value for key, value in row.items() if key != "solution"} for row in rows]
 
 
 def sign_test(losses: int, wins: int) -> float:
     from math import comb
     total = losses + wins
     return 1.0 if total == 0 else sum(comb(total, k) for k in range(wins, total + 1)) / 2 ** total
+
+
+def signed_rank_test(differences: Sequence[float]) -> float:
+    """Exact one-sided Wilcoxon signed-rank test that the differences lean positive. Zeros are dropped,
+    tied sizes share their mean rank, and the null distribution is enumerated over all sign assignments."""
+    sizes = sorted(abs(value) for value in differences if value)
+    if not sizes:
+        return 1.0
+    doubled = {}
+    for size in set(sizes):
+        first = sizes.index(size) + 1
+        doubled[size] = 2 * first + sizes.count(size) - 1
+    observed = sum(doubled[abs(value)] for value in differences if value > 0)
+    ways = {0: 1}
+    for size in sizes:
+        step = {}
+        for total, count in ways.items():
+            step[total] = step.get(total, 0) + count
+            step[total + doubled[size]] = step.get(total + doubled[size], 0) + count
+        ways = step
+    return sum(count for total, count in ways.items() if total >= observed) / 2 ** len(sizes)
 
 
 def compared(parent: Sequence[Mapping], child: Sequence[Mapping], *, tie: float = 0.005) -> dict:
@@ -204,10 +233,10 @@ def compared(parent: Sequence[Mapping], child: Sequence[Mapping], *, tie: float 
                                                 if family in (None, key[0])) / max(1, sum(family in (None, key[0]) for key in pairs)), 6)
     return {"tasks": len(pairs), "parent_mean": mean(0), "child_mean": mean(1), "wins": wins, "losses": losses,
             "one_sided_exact_sign_test_p": round(sign_test(losses, wins), 6),
+            "one_sided_exact_signed_rank_p": round(signed_rank_test([round(second - first, 6) for first, second in pairs.values()]), 6),
             "by_family": {family: {"parent": mean(0, family), "child": mean(1, family)} for family in families}}
 
 
-def promoted(comparison: Mapping, *, margin: int, level: float) -> bool:
-    """The rule of a lineage: more tasks won than lost by ``margin``, a higher mean, and the sign test."""
-    return (comparison["wins"] - comparison["losses"] >= margin and comparison["child_mean"] > comparison["parent_mean"]
-            and comparison["one_sided_exact_sign_test_p"] <= level)
+def promoted(comparison: Mapping, *, level: float) -> bool:
+    """The rule of a lineage: a higher mean score and the signed-rank test over the tasks."""
+    return comparison["child_mean"] > comparison["parent_mean"] and comparison["one_sided_exact_signed_rank_p"] <= level

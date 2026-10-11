@@ -3,7 +3,7 @@
 This file is copied into a container without network and run there next to model-written code.
 It uses the standard library only and never imports Genesis.
 
-A *task* asks for a Python program and scores it. Twelve families of ordinary tasks ask for
+A *task* asks for a Python program and scores it. Families of ordinary tasks ask for
 ``solve(instance)``; each draws its instances from a seed, has a trivial baseline answer and a
 cost to minimise. The quality of a program on one instance is ``1 - cost / baseline cost``,
 floored at zero; an invalid answer, an exception or a timeout scores zero. One more family,
@@ -55,7 +55,7 @@ def _permutation(answer, n: int) -> list:
     return answer
 
 
-@family("tsp", "development", """
+@family("tsp", "retired", """
 Travelling salesman. `instance["points"]` is a list of [x, y]. Return a list with every point index
 exactly once; the cost is the length of the closed tour in that order.""")
 class _Tsp:
@@ -75,7 +75,7 @@ class _Tsp:
         return list(range(len(public["points"])))
 
 
-@family("binpack", "development", """
+@family("binpack", "retired", """
 Bin packing. `instance["items"]` is a list of integer sizes and `instance["capacity"]` the size of a bin.
 Return a list of bins, each a list of item indices; every item appears once and no bin exceeds the
 capacity. The cost is the number of bins.""")
@@ -99,7 +99,7 @@ class _BinPack:
         return [[i] for i in range(len(public["items"]))]
 
 
-@family("coloring", "development", """
+@family("coloring", "retired", """
 Graph colouring. `instance["n"]` vertices, `instance["edges"]` a list of [u, v]. Return a list of n integers,
 the colour of each vertex; adjacent vertices must differ. The cost is the number of distinct colours.""")
 class _Coloring:
@@ -121,7 +121,7 @@ class _Coloring:
         return list(range(public["n"]))
 
 
-@family("tardiness", "development", """
+@family("tardiness", "retired", """
 Single machine scheduling. `instance["jobs"]` is a list of [duration, due date, weight]. Return the job indices
 in processing order; the cost is 1 plus the sum over jobs of weight * max(0, completion time - due date).""")
 class _Tardiness:
@@ -198,7 +198,7 @@ class _Regression:
         return [mean] * len(public["queries"])
 
 
-@family("qap", "development", """
+@family("qap", "retired", """
 Quadratic assignment. `instance["flow"]` and `instance["distance"]` are n x n matrices. Return a list p with
 every location index exactly once (facility i goes to location p[i]); the cost is the sum over i, j of
 flow[i][j] * distance[p[i]][p[j]].""")
@@ -221,7 +221,7 @@ class _Qap:
         return list(range(len(public["flow"])))
 
 
-@family("maxcut", "held_out", """
+@family("maxcut", "far", """
 Maximum cut. `instance["n"]` vertices, `instance["edges"]` a list of [u, v, weight]. Return a list of n values,
 each 0 or 1, the side of each vertex; the cost is 1 plus the total weight of the edges that are NOT cut.""")
 class _MaxCut:
@@ -244,7 +244,7 @@ class _MaxCut:
         return [0] * public["n"]
 
 
-@family("setcover", "held_out", """
+@family("setcover", "far", """
 Set cover. `instance["universe"]` is the number of elements (0..universe-1) and `instance["sets"]` a list of
 lists of elements. Return a list of set indices whose union is the whole universe; the cost is how many.""")
 class _SetCover:
@@ -272,7 +272,7 @@ class _SetCover:
         return list(range(len(public["sets"])))
 
 
-@family("knapsack", "held_out", """
+@family("knapsack", "far", """
 Multi-dimensional knapsack. `instance["items"]` is a list of [value, w0, w1, w2] and `instance["capacity"]` is
 [c0, c1, c2]. Return a list of distinct item indices whose total weight respects every capacity; the cost is
 1 plus the total value of the items left out.""")
@@ -299,7 +299,7 @@ class _Knapsack:
         return []
 
 
-@family("jobshop", "held_out", """
+@family("jobshop", "far", """
 Job shop. `instance["jobs"]` is a list of jobs, each a list of [machine, duration] operations to run in that
 order. Return a list of job indices in which job j appears once per operation of job j: reading it left to
 right, each occurrence schedules the next operation of that job as early as its machine and its job allow.
@@ -331,7 +331,7 @@ class _JobShop:
         return [j for j, job in enumerate(public["jobs"]) for _ in job]
 
 
-@family("cluster", "held_out", """
+@family("cluster", "far", """
 Clustering. `instance["points"]` is a list of [x, y] and `instance["k"]` the number of clusters. Return a list
 with one label in 0..k-1 per point; the cost is 1 plus the sum of squared distances of the points to the
 mean of their cluster.""")
@@ -405,6 +405,275 @@ class _Sequence:
         return [0] * public["count"]
 
 
+# Families whose instances each hide a rule: the program is a learner, given examples and queries. They were
+# added after the first two lineages, where five optimisation families gave every improver the same score.
+
+def _wrong(secret, answer) -> float:
+    answer = list(answer)
+    if len(answer) != len(secret):
+        raise ValueError("one answer per query is required")
+    return 1e-6 + sum(a != b for a, b in zip(answer, secret))
+
+
+def _majority(values):
+    values = list(values)
+    return max(sorted(set(values)), key=values.count)
+
+
+@family("classify", "development", """
+Classification. `instance["train"]` is a list of [x0, ..., x5, label] with features in [-1, 1] and label 0 or 1,
+and `instance["queries"]` a list of [x0, ..., x5]. The labels follow one hidden rule on a few of the features (a
+linear threshold, a product of two features being positive, a disc in two features, or a small decision tree);
+about 5% of the training labels are flipped. Return one label per query; the cost is the number of wrong labels.""")
+class _Classify:
+    @staticmethod
+    def gen(seed):
+        rng = _rng("classify", seed)
+        kind = rng.choice(["linear", "product", "disc", "tree"])
+        i, j, k = rng.sample(range(6), 3)
+        if kind == "linear":
+            weights = [rng.gauss(0, 1) if rng.random() < 0.6 else 0.0 for _ in range(6)]
+            offset = rng.uniform(-0.3, 0.3)
+            rule = lambda x: sum(w * v for w, v in zip(weights, x)) + offset > 0  # noqa: E731
+        elif kind == "product":
+            rule = lambda x: x[i] * x[j] > 0  # noqa: E731
+        elif kind == "disc":
+            a, b, r = rng.uniform(-0.4, 0.4), rng.uniform(-0.4, 0.4), rng.uniform(0.5, 0.8)
+            rule = lambda x: (x[i] - a) ** 2 + (x[j] - b) ** 2 < r * r  # noqa: E731
+        else:
+            t = [rng.uniform(-0.4, 0.4) for _ in range(3)]
+            rule = lambda x: x[j] > t[1] if x[i] > t[0] else x[k] > t[2]  # noqa: E731
+        draw = lambda: [round(rng.uniform(-1, 1), 3) for _ in range(6)]  # noqa: E731
+        train, queries = [draw() for _ in range(100)], [draw() for _ in range(60)]
+        return ({"train": [[*x, int(rule(x)) ^ (rng.random() < 0.05)] for x in train], "queries": queries},
+                [int(rule(x)) for x in queries])
+
+    @staticmethod
+    def cost(public, secret, answer):
+        return _wrong(secret, [int(item) for item in answer])
+
+    @staticmethod
+    def baseline(public):
+        return [_majority(row[-1] for row in public["train"])] * len(public["queries"])
+
+
+@family("automaton", "development", """
+Regular language. `instance["train"]` is a list of [string, label] where the strings are over the letters a and b
+and label is 1 when a hidden deterministic automaton with 3 to 5 states accepts the string, else 0;
+`instance["queries"]` is a list of strings, some longer than any training string. Return one label per query; the
+cost is the number of wrong labels.""")
+class _Automaton:
+    @staticmethod
+    def gen(seed):
+        rng = _rng("automaton", seed)
+        n = rng.randrange(3, 6)
+        step = [[rng.randrange(n), rng.randrange(n)] for _ in range(n)]
+        accepting = set(rng.sample(range(n), rng.randrange(1, n)))
+
+        def label(text):
+            state = 0
+            for letter in text:
+                state = step[state][letter == "b"]
+            return int(state in accepting)
+        word = lambda longest: "".join(rng.choice("ab") for _ in range(rng.randrange(longest + 1)))  # noqa: E731
+        train, queries = [word(10) for _ in range(100)], [word(14) for _ in range(60)]
+        return {"train": [[text, label(text)] for text in train], "queries": queries}, [label(text) for text in queries]
+
+    @staticmethod
+    def cost(public, secret, answer):
+        return _wrong(secret, [int(item) for item in answer])
+
+    @staticmethod
+    def baseline(public):
+        return [_majority(row[1] for row in public["train"])] * len(public["queries"])
+
+
+def _running(values, combine):
+    out = []
+    for value in values:
+        out.append(value if not out else combine(out[-1], value))
+    return out
+
+
+_LIST_OPERATIONS = {
+    "reverse": lambda v: v[::-1], "sort": sorted, "add one": lambda v: [x + 1 for x in v],
+    "add two": lambda v: [x + 2 for x in v], "double": lambda v: [2 * x for x in v], "negate": lambda v: [-x for x in v],
+    "absolute values": lambda v: [abs(x) for x in v], "drop the first": lambda v: v[1:], "drop the last": lambda v: v[:-1],
+    "keep even values": lambda v: [x for x in v if x % 2 == 0], "keep positive values": lambda v: [x for x in v if x > 0],
+    "running sum": lambda v: _running(v, lambda a, b: a + b), "running maximum": lambda v: _running(v, max),
+    "adjacent differences": lambda v: [b - a for a, b in zip(v, v[1:])],
+    "remove repeated values": lambda v: list(dict.fromkeys(v)), "rotate left by one": lambda v: v[1:] + v[:1],
+    "swap neighbours": lambda v: [x for pair in zip(v[1::2], v[::2]) for x in pair] + (v[-1:] if len(v) % 2 else []),
+}
+
+
+@family("transform", "development", """
+List transformation. `instance["train"]` is a list of [input, output] pairs of integer lists and
+`instance["queries"]` a list of inputs. One hidden pipeline of two or three operations, applied in order, maps
+every input to its output; the operations are among: """ + ", ".join(_LIST_OPERATIONS) + """. Return one
+output list per query; the cost is the number of queries whose output is not exactly right.""")
+class _Transform:
+    @staticmethod
+    def gen(seed):
+        rng = _rng("transform", seed)
+        names = [rng.choice(sorted(_LIST_OPERATIONS)) for _ in range(rng.randrange(2, 4))]
+
+        def apply(values):
+            for name in names:
+                values = list(_LIST_OPERATIONS[name](values))
+            return values
+        draw = lambda: [rng.randrange(-9, 10) for _ in range(rng.randrange(4, 9))]  # noqa: E731
+        train, queries = [draw() for _ in range(10)], [draw() for _ in range(8)]
+        return {"train": [[values, apply(values)] for values in train], "queries": queries}, [apply(values) for values in queries]
+
+    @staticmethod
+    def cost(public, secret, answer):
+        return _wrong(secret, [[int(x) for x in item] for item in answer])
+
+    @staticmethod
+    def baseline(public):
+        return [[] for _ in public["queries"]]
+
+
+@family("forecast", "development", """
+Forecast. `instance["history"]` holds 96 values of a series observed at times 0..95: a slow linear trend plus one
+or two sine waves (periods among 6, 7, 8, 12, 16, 24) plus correlated noise. `instance["count"]` says how many
+further values to predict. Return that many numbers; the cost is the mean squared error against the series
+without its noise.""")
+class _Forecast:
+    @staticmethod
+    def gen(seed):
+        rng = _rng("forecast", seed)
+        level, slope = rng.uniform(-5, 5), rng.uniform(-0.05, 0.05)
+        waves = [(rng.uniform(1, 4), period, rng.uniform(0, 2 * math.pi))
+                 for period in rng.sample([6, 7, 8, 12, 16, 24], rng.randrange(1, 3))]
+        clean = lambda t: level + slope * t + sum(a * math.sin(2 * math.pi * t / p + phase) for a, p, phase in waves)  # noqa: E731
+        history, noise = [], 0.0
+        for t in range(96):
+            noise = 0.5 * noise + rng.gauss(0, 0.4)
+            history.append(round(clean(t) + noise, 3))
+        return {"history": history, "count": 24}, [clean(t) for t in range(96, 120)]
+
+    @staticmethod
+    def cost(public, secret, answer):
+        return _Regression.cost(public, secret, answer)
+
+    @staticmethod
+    def baseline(public):
+        return [sum(public["history"]) / len(public["history"])] * public["count"]
+
+
+@family("cellular", "development", """
+Cellular automaton. A row of 20 cells (0 or 1) on a ring evolves by one hidden rule: every cell's next value
+depends on the cells within a hidden radius (1 or 2) around it. `instance["train"]` is a list of [row, later row]
+pairs, where the later row is the row after a hidden number of steps (1 to 3 for radius 1, always 1 for radius
+2), the same for all pairs; `instance["queries"]` is a list of rows. Return the later row of each query; the cost
+is the number of wrong cells.""")
+class _Cellular:
+    @staticmethod
+    def gen(seed):
+        rng = _rng("cellular", seed)
+        radius = rng.choice([1, 1, 2])
+        steps = rng.randrange(1, 4) if radius == 1 else 1
+        table = [rng.randrange(2) for _ in range(2 ** (2 * radius + 1))]
+
+        def later(row):
+            for _ in range(steps):
+                row = [table[sum(row[(index + shift) % len(row)] << (radius - shift) for shift in range(-radius, radius + 1))]
+                       for index in range(len(row))]
+            return row
+        draw = lambda: [rng.randrange(2) for _ in range(20)]  # noqa: E731
+        train, queries = [draw() for _ in range(6)], [draw() for _ in range(6)]
+        return {"train": [[row, later(row)] for row in train], "queries": queries}, [later(row) for row in queries]
+
+    @staticmethod
+    def cost(public, secret, answer):
+        rows = [[int(cell) for cell in row] for row in answer]
+        if len(rows) != len(secret) or any(len(row) != 20 for row in rows):
+            raise ValueError("one row of 20 cells per query is required")
+        return 1e-6 + sum(a != b for mine, theirs in zip(rows, secret) for a, b in zip(mine, theirs))
+
+    @staticmethod
+    def baseline(public):
+        return [list(row) for row in public["queries"]]
+
+
+@family("completion", "held_out", """
+Matrix completion. A hidden 12 x 12 matrix has rank 2. `instance["known"]` is a list of [row, column, value] for
+about half of its entries (slightly noisy) and `instance["queries"]` a list of [row, column] among the others.
+Return one value per query; the cost is the mean squared error.""")
+class _Completion:
+    @staticmethod
+    def gen(seed):
+        rng = _rng("completion", seed)
+        left = [[rng.gauss(0, 1) for _ in range(2)] for _ in range(12)]
+        right = [[rng.gauss(0, 1) for _ in range(2)] for _ in range(12)]
+        value = lambda i, j: sum(a * b for a, b in zip(left[i], right[j]))  # noqa: E731
+        cells = [(i, j) for i in range(12) for j in range(12)]
+        rng.shuffle(cells)
+        return ({"known": [[i, j, round(value(i, j) + rng.gauss(0, 0.02), 4)] for i, j in cells[:76]],
+                 "queries": [[i, j] for i, j in cells[76:116]]}, [value(i, j) for i, j in cells[76:116]])
+
+    @staticmethod
+    def cost(public, secret, answer):
+        return _Regression.cost(public, secret, answer)
+
+    @staticmethod
+    def baseline(public):
+        return [sum(row[2] for row in public["known"]) / len(public["known"])] * len(public["queries"])
+
+
+@family("markov", "held_out", """
+Next symbol. `instance["text"]` is a string of 600 letters among a, b, c, d produced by a hidden chain: the next
+letter depends on the last 1, 2 or 3 letters (the order is hidden), each context having one favourite next letter
+drawn 85% of the time. `instance["queries"]` is a list of 5-letter contexts. Return the favourite next letter of
+each; the cost is the number of wrong letters.""")
+class _Markov:
+    @staticmethod
+    def gen(seed):
+        rng = _rng("markov", seed)
+        order, favourite = rng.randrange(1, 4), {}
+        like = lambda context: favourite.setdefault(context[-order:], rng.choice("abcd"))  # noqa: E731
+        text = "".join(rng.choice("abcd") for _ in range(3))
+        while len(text) < 600:
+            text += like(text) if rng.random() < 0.85 else rng.choice("abcd")
+        queries = ["".join(rng.choice("abcd") for _ in range(5)) for _ in range(50)]
+        return {"text": text, "queries": queries}, [like(context) for context in queries]
+
+    @staticmethod
+    def cost(public, secret, answer):
+        return _wrong(secret, [str(item) for item in answer])
+
+    @staticmethod
+    def baseline(public):
+        return [_majority(public["text"])] * len(public["queries"])
+
+
+@family("relation", "held_out", """
+Modular relation. `instance["train"]` is a list of [x, y, z] with x and y between 0 and 30, and
+`instance["queries"]` a list of [x, y]. z is one hidden formula of x and y modulo a hidden prime m among 7, 11,
+13, 17: (a*x + b*y + c) mod m, (a*x*y + c) mod m, or (a*x*x + b*y) mod m, with hidden integers a, b, c. Return one
+z per query; the cost is the number of wrong values.""")
+class _Relation:
+    @staticmethod
+    def gen(seed):
+        rng = _rng("relation", seed)
+        m, kind = rng.choice([7, 11, 13, 17]), rng.randrange(3)
+        a, b, c = rng.randrange(1, m), rng.randrange(1, m), rng.randrange(m)
+        value = lambda x, y: ((a * x + b * y + c), (a * x * y + c), (a * x * x + b * y))[kind] % m  # noqa: E731
+        draw = lambda: [rng.randrange(31), rng.randrange(31)]  # noqa: E731
+        train, queries = [draw() for _ in range(40)], [draw() for _ in range(40)]
+        return {"train": [[x, y, value(x, y)] for x, y in train], "queries": queries}, [value(x, y) for x, y in queries]
+
+    @staticmethod
+    def cost(public, secret, answer):
+        return _wrong(secret, [int(item) for item in answer])
+
+    @staticmethod
+    def baseline(public):
+        return [_majority(row[2] for row in public["train"])] * len(public["queries"])
+
+
 # --------------------------------------------------------------------------- scoring one program
 
 # The program runs in a process that holds neither this module nor the hidden answers: it receives the
@@ -417,7 +686,7 @@ request = json.loads(sys.stdin.read())
 out, sys.stdout = sys.stdout, sys.stderr
 class Deadline(BaseException): pass
 def alarm(signum, frame): raise Deadline()
-signal.signal(signal.SIGALRM, alarm)
+signal.signal(signal.SIGPROF, alarm)
 rows = []
 try:
     namespace = {"__name__": "solution"}
@@ -427,10 +696,10 @@ except BaseException as error:
     rows = [{"error": f"{type(error).__name__}: {error}"[:300]} for _ in request["instances"]]
 else:
     for instance in request["instances"]:
-        signal.setitimer(signal.ITIMER_REAL, request["seconds"])
+        signal.setitimer(signal.ITIMER_PROF, request["seconds"])
         try:
             answer = solve(instance)
-            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.setitimer(signal.ITIMER_PROF, 0)
             json.dumps(answer)
             rows.append({"answer": answer})
         except Deadline:
@@ -438,7 +707,7 @@ else:
         except BaseException as error:
             rows.append({"error": f"{type(error).__name__}: {error}"[:300]})
         finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.setitimer(signal.ITIMER_PROF, 0)
 out.write(json.dumps(rows))
 """
 
@@ -460,7 +729,7 @@ def evaluated(source: str, name: str, seeds: list) -> list:
         done = subprocess.run([sys.executable, "-I", "-c", _SOLVER], preexec_fn=_limits,
                               input=json.dumps({"source": source, "instances": [public for public, _ in instances],
                                                 "seconds": SOLVE_SECONDS}),
-                              capture_output=True, text=True, timeout=len(seeds) * (SOLVE_SECONDS + 1) + 10)
+                              capture_output=True, text=True, timeout=len(seeds) * 4 * SOLVE_SECONDS + 30)
         answers = json.loads(done.stdout)
         if len(answers) != len(seeds):
             raise ValueError
@@ -484,6 +753,10 @@ def evaluated(source: str, name: str, seeds: list) -> list:
     return rows
 
 
+_MAJORITY = ("    seen = {}\n    seen = sorted(set(seen), key=lambda value: (-seen.count(value), value))\n"
+             "    return [seen[0]] * len(instance['queries'])")
+
+
 def baseline_source(name: str) -> str:
     return ("def solve(instance):\n    # trivial answer: quality 0 by definition\n"
             + {"tsp": "    return list(range(len(instance['points'])))",
@@ -498,7 +771,17 @@ def baseline_source(name: str) -> str:
                "knapsack": "    return []",
                "jobshop": "    return [j for j, job in enumerate(instance['jobs']) for _ in job]",
                "cluster": "    return [0] * len(instance['points'])",
-               "sequence": "    return [0] * instance['count']"}[name] + "\n")
+               "sequence": "    return [0] * instance['count']",
+               "classify": _MAJORITY.format("[row[-1] for row in instance['train']]"),
+               "automaton": _MAJORITY.format("[row[1] for row in instance['train']]"),
+               "transform": "    return [[] for _ in instance['queries']]",
+               "forecast": ("    mean = sum(instance['history']) / len(instance['history'])\n"
+                            "    return [mean] * instance['count']"),
+               "cellular": "    return [list(row) for row in instance['queries']]",
+               "completion": ("    mean = sum(row[2] for row in instance['known']) / len(instance['known'])\n"
+                              "    return [mean] * len(instance['queries'])"),
+               "markov": _MAJORITY.format("list(instance['text'])"),
+               "relation": _MAJORITY.format("[row[2] for row in instance['train']]")}[name] + "\n")
 
 
 # --------------------------------------------------------------------------- the model, over a stream
@@ -615,7 +898,7 @@ class Task:
 
 SOLVER_RULES = (
     "Write a Python module (standard library only) defining `solve(instance)`. It is run on several instances of "
-    f"the same kind, {SOLVE_SECONDS:g} seconds each on one core; a timeout, an exception or an invalid answer scores 0 on that "
+    f"the same kind, {SOLVE_SECONDS:g} seconds of processor time each; a timeout, an exception or an invalid answer scores 0 on that "
     "instance. The score is the mean over instances of 1 - cost / (cost of the trivial answer), so higher is better.")
 
 IMPROVER_DESCRIPTION = """

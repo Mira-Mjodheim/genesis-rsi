@@ -21,9 +21,10 @@ def solve(instance):
 
 
 def test_every_family_scores_its_trivial_answer_zero_and_is_reproducible():
-    assert len(runtime.FAMILIES) == 12
+    assert len(runtime.FAMILIES) == 20
     assert sorted(name for name, spec in runtime.FAMILIES.items() if spec["role"] == "development") == sorted(lineage.DEVELOPMENT)
     assert sorted(name for name, spec in runtime.FAMILIES.items() if spec["role"] == "held_out") == sorted(lineage.HELD_OUT)
+    assert sorted(name for name, spec in runtime.FAMILIES.items() if spec["role"] == "far") == sorted(lineage.FAR)
     for name, spec in runtime.FAMILIES.items():
         assert spec["gen"](3) == spec["gen"](3) and spec["gen"](3) != spec["gen"](4)
         assert runtime.evaluated(runtime.baseline_source(name), name, [3])[0] == {"seed": 3, "quality": 0.0, "cost": runtime.evaluated(runtime.baseline_source(name), name, [3])[0]["cost"], "error": None}, name
@@ -67,6 +68,15 @@ def test_the_seed_improver_runs_on_a_task_within_its_budget():
     assert "Travelling salesman" in model.asked[0] and "score 0.0000" in model.asked[0]
 
 
+def test_a_learner_family_gives_the_hidden_answers_full_marks():
+    for name in ("automaton", "cellular", "classify", "forecast", "transform", "completion", "markov", "relation"):
+        spec = runtime.FAMILIES[name]
+        for seed in range(20, 26):
+            public, secret = spec["gen"](seed)
+            base = spec["cost"](public, secret, spec["baseline"](public))
+            assert "secret" not in json.dumps(public) and spec["cost"](public, secret, secret) / base < 1e-3 or base < 1e-3, (name, seed)
+
+
 def test_the_host_refuses_requests_beyond_the_budget_whatever_the_improver_counts():
     greedy_improver = '''
 def improve(task, lm, budget):
@@ -81,7 +91,7 @@ def improve(task, lm, budget):
 '''
     model = _model(lambda prompt, count: "ok")
     ran = lineage.run_improver(greedy_improver, lineage.object_spec("tsp", 4), model, command=[*LOCAL, "run"])
-    assert len(model.asked) == lineage.OBJECT_BUDGET["lm_calls"] and ran["solution"] == "# 6"
+    assert len(model.asked) == lineage.OBJECT_BUDGET["lm_calls"] and ran["solution"] == "# 3"
 
 
 def test_a_failing_improver_gives_back_the_initial_program():
@@ -112,9 +122,11 @@ def test_the_seed_improver_improves_an_improver_and_its_requests_are_all_counted
 def test_promotion_needs_wins_a_higher_mean_and_the_test():
     rows = lambda scores: [{"family": "tsp", "task": index, "score": value} for index, value in enumerate(scores)]  # noqa: E731
     even = lineage.compared(rows([0.5] * 10), rows([0.6] * 5 + [0.4] * 5))
-    assert even["wins"] == even["losses"] == 5 and not lineage.promoted(even, margin=3, level=0.05)
+    assert even["wins"] == even["losses"] == 5 and not lineage.promoted(even, level=0.05)
     clear = lineage.compared(rows([0.5] * 10), rows([0.6] * 8 + [0.5, 0.502]))
-    assert clear["wins"] == 8 and clear["losses"] == 0 and lineage.promoted(clear, margin=3, level=0.05)
+    assert clear["wins"] == 8 and clear["losses"] == 0 and lineage.promoted(clear, level=0.05)
+    assert lineage.signed_rank_test([1, 2, 3, 4, 5]) == 1 / 32 and lineage.signed_rank_test([1, -1]) == 0.75
+    assert lineage.signed_rank_test([0, 0]) == 1.0
     assert clear["by_family"]["tsp"]["parent"] == 0.5
     with pytest.raises(ValueError):
         lineage.compared(rows([0.5] * 3), rows([0.5] * 2))
@@ -124,5 +136,5 @@ def test_the_container_has_no_network_and_cannot_write_outside_tmp():
     argv = lineage.docker_argv("n", "run", cpus=2)
     assert argv[argv.index("--network") + 1] == "none" and "--read-only" in argv and "ALL" in argv
     assert any(item.endswith("improver_runtime.py,readonly") for item in argv) and lineage.IMAGE in argv
-    assert lineage.seeds(12, lineage.VISIBLE) == [120, 121, 122] and lineage.seeds(12, lineage.HIDDEN)[0] == 125
+    assert lineage.seeds(12, lineage.VISIBLE) == [1200, 1201, 1202, 1203] and lineage.seeds(12, lineage.HIDDEN)[0] == 1220
     assert not set(lineage.VISIBLE) & set(lineage.HIDDEN) and not set(lineage.CHECK) & set(lineage.HIDDEN)

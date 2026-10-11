@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """A lineage of improvers whose model is reached through the Codex client, under a daily ceiling.
 
+    pilot        given improvers on a few development tasks kept for pilots: does the bench tell them apart?
     plan         freeze the lineage; same protocol as run_improver_lineage.py, other model and channel
     generation   as there; stops without sealing when the day's requests are spent, and resumes
 
@@ -29,7 +30,7 @@ from genesis.trust_root import digest_of  # noqa: E402
 HOME = ROOT / "experiment/improver"
 MACHINERY = ("genesis/improver_runtime.py", "genesis/improver_lineage.py", "genesis/improver_seed.py",
              "genesis/improver_codex.py", "scripts/run_codex_improver_lineage.py")
-META_TASKS, SELECTION_TASKS = 1000, 2000
+META_TASKS, SELECTION_TASKS, PILOT_TASKS = 1000, 2000, 9000
 
 
 def machinery() -> dict:
@@ -60,6 +61,24 @@ def kept(path: Path, compute):
     return value
 
 
+def pilot(arguments) -> None:
+    workspace = Path(arguments.workspace).resolve()
+    tasks = [(family, PILOT_TASKS + index) for family in lineage.DEVELOPMENT for index in range(arguments.tasks)]
+    for path in arguments.improver:
+        label, source = Path(path).stem + arguments.suffix, Path(path).read_text(encoding="utf-8")
+
+        def one(item, label=label, source=source):
+            family, task = item
+            return kept(workspace / "pilot" / label / f"{family}-{task}.json", lambda: lineage.attempt(
+                source, family, task, codex.CodexModel(workspace / "calls.jsonl", {"use": f"pilot:{label}", "family": family,
+                                                                                  "task": task}, per_day=arguments.per_day)))
+        with ThreadPoolExecutor(max_workers=arguments.parallel) as pool:
+            rows = list(pool.map(one, tasks))
+        print(label, round(sum(row["score"] for row in rows) / len(rows), 4),
+              {f"{row['family']}-{row['task']}": row["score"] for row in rows},
+              "errors", [row["error"] for row in rows if row["error"]], "calls", sum(row["lm_calls"] for row in rows), flush=True)
+
+
 def plan(arguments) -> None:
     target = HOME / arguments.name / "PLAN.json"
     if target.exists():
@@ -76,23 +95,24 @@ def plan(arguments) -> None:
         "object_budget": lineage.OBJECT_BUDGET, "meta_budget": lineage.META_BUDGET,
         "tasks_per_improver_evaluation": lineage.CHILDREN,
         "development_families": list(lineage.DEVELOPMENT), "held_out_families": list(lineage.HELD_OUT),
+        "far_families": list(lineage.FAR), "instances_per_task": {"shown": len(lineage.VISIBLE), "check": len(lineage.CHECK), "hidden": len(lineage.HIDDEN)},
         "generations": arguments.generations, "replicate": arguments.replicate,
         "self_application": ("generation g: the current improver is run on the task 'improver' with its own source as "
                              f"the initial program and {lineage.CHILDREN} development tasks numbered "
                              f"{META_TASKS} + 100 * (10 * replicate + g) + i, one per family in rotation; what it returns is "
                              "the candidate"),
         "comparison": (f"parent and candidate are each run once on {arguments.selection} tasks per development family, "
-                       f"numbered {SELECTION_TASKS} + 100 * (10 * replicate + g) + i, and scored by the host on the five hidden "
+                       f"numbered {SELECTION_TASKS} + 100 * (10 * replicate + g) + i, and scored by the host on the hidden "
                        "instances of each task"),
         "selection_tasks_per_family": arguments.selection,
-        "promotion_rule": {"margin": arguments.margin, "level": 0.05, "tie": 0.005,
-                           "text": "tasks won minus tasks lost at least the margin, a higher mean score, and an exact "
-                                   "one-sided sign test at the level; a candidate identical to its parent is not run"},
+        "promotion_rule": {"level": 0.05, "tie": 0.005,
+                           "text": "a higher mean score and an exact one-sided Wilcoxon signed-rank test over the "
+                                   "tasks at the level; a candidate identical to its parent is not run"},
         "after_a_rejection": "the parent stays and applies itself again on new tasks",
         "resumption": ("a generation interrupted by the daily ceiling or by the subscription resumes from what is "
                        "stored; a finished self-application or task is never run again; a task whose improver was cut "
                        "off by the interruption is discarded and run again in full"),
-        "held_out_rule": ("held-out families are run only once the lineage is frozen, seed against final improver, "
+        "held_out_rule": ("held-out and far families are run only once the lineage is frozen, seed against final improver, "
                           "under a separate preregistration"),
         "claim_boundary": ("promotions on development families select improvers and prove nothing by themselves; no "
                            "outcome of a lineage establishes general recursive self-improvement"),
@@ -160,11 +180,11 @@ def generation(arguments) -> None:
             child_rows = attempts(candidate, "candidate", tasks)
             rule = frozen["promotion_rule"]
             comparison = lineage.compared(parent_rows, child_rows, tie=rule["tie"])
-            won = lineage.promoted(comparison, margin=rule["margin"], level=rule["level"])
+            won = lineage.promoted(comparison, level=rule["level"])
             if won:
                 (home / "improvers" / f"g{number}.py").write_text(candidate, encoding="utf-8")
             body.update(comparison=comparison, promoted=won, current_after=f"g{number}" if won else current,
-                        parent_rows=parent_rows, candidate_rows=child_rows, reason=None)
+                        parent_rows=lineage.summaries(parent_rows), candidate_rows=lineage.summaries(child_rows), reason=None)
     except (BudgetExhausted, ModelUnavailable) as error:
         raise SystemExit(f"interrupted, nothing sealed, resume later: {type(error).__name__}: {error}")
     journal = workspace / "calls.jsonl"
@@ -177,15 +197,22 @@ def generation(arguments) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name, function in (("plan", plan), ("generation", generation)):
+    for name, function in (("pilot", pilot), ("plan", plan), ("generation", generation)):
         command = commands.add_parser(name)
         command.set_defaults(function=function)
+        if name == "pilot":
+            command.add_argument("--workspace", required=True)
+            command.add_argument("--improver", nargs="+", required=True)
+            command.add_argument("--suffix", default="", help="distinguishes a second run of the same improver")
+            command.add_argument("--tasks", type=int, default=2)
+            command.add_argument("--per-day", type=int, default=300)
+            command.add_argument("--parallel", type=int, default=4)
+            continue
         command.add_argument("--name", required=True)
         if name == "plan":
             command.add_argument("--generations", type=int, default=5)
             command.add_argument("--replicate", type=int, required=True)
             command.add_argument("--selection", type=int, default=4)
-            command.add_argument("--margin", type=int, default=4)
             command.add_argument("--per-day", type=int, default=300)
         else:
             command.add_argument("--workspace", required=True)

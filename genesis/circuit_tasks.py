@@ -1,0 +1,65 @@
+"""Truth tables to synthesise, by family. Families are split once and for all between those an
+engine may learn from and those kept to judge it; nothing here is drawn from solutions."""
+from __future__ import annotations
+
+import random
+
+from genesis.circuit_engine import Task
+
+LEARN = ("and", "or", "parity", "equal", "mux", "adder", "majority")
+HELD_OUT = ("less", "subtract", "popcount", "exactly", "multiply")
+CONTROL = ("random",)      # no structure to reuse: a library should bring little here
+
+
+def _table(inputs: int, function) -> int:
+    return sum(int(bool(function([(row >> index) & 1 for index in range(inputs)]))) << row for row in range(1 << inputs))
+
+
+def _number(bits) -> int:
+    return sum(bit << index for index, bit in enumerate(bits))
+
+
+def tasks(family: str, seed: int = 0) -> list[Task]:
+    made: list[tuple[str, int, object]] = []
+    if family == "and":
+        made = [(f"and{n}", n, all) for n in range(2, 7)] + [(f"nor{n}", n, lambda x: not any(x)) for n in range(2, 7)]
+    elif family == "or":
+        made = [(f"or{n}", n, any) for n in range(2, 7)]
+    elif family == "parity":
+        made = [(f"parity{n}", n, lambda x: sum(x) % 2) for n in range(2, 7)]
+    elif family == "majority":
+        made = [(f"atleast{k}of{n}", n, lambda x, k=k: sum(x) >= k) for n in range(3, 6) for k in range(2, n)]
+    elif family == "exactly":
+        made = [(f"exactly{k}of{n}", n, lambda x, k=k: sum(x) == k) for n in range(3, 6) for k in range(1, n)]
+    elif family == "popcount":
+        made = [(f"count{n}bit{j}", n, lambda x, j=j: (sum(x) >> j) & 1) for n in range(3, 7) for j in range(1, n.bit_length())]
+    elif family == "mux":
+        made = [("mux2", 3, lambda x: x[1 + x[0]]), ("mux3", 5, lambda x: x[2 + min(x[0] + 2 * x[1], 2)]),
+                ("mux4", 6, lambda x: x[2 + x[0] + 2 * x[1]])]
+    elif family in ("adder", "subtract", "less", "equal", "multiply"):
+        for width in (1, 2, 3):
+            n = 2 * width
+            a, b = (lambda x, w=width: _number(x[:w])), (lambda x, w=width: _number(x[w:2 * w]))
+            if family == "adder":
+                made += [(f"add{width}bit{j}", n, lambda x, j=j, a=a, b=b: ((a(x) + b(x)) >> j) & 1) for j in range(width + 1)]
+                made += [(f"addc{width}bit{j}", n + 1, lambda x, j=j, a=a, b=b, n=n: ((a(x) + b(x) + x[n]) >> j) & 1)
+                         for j in range(width + 1)]
+            elif family == "subtract":
+                made += [(f"sub{width}bit{j}", n, lambda x, j=j, a=a, b=b, w=width: (((a(x) - b(x)) % (2 << w)) >> j) & 1)
+                         for j in range(width + 1)]
+            elif family == "less":
+                made += [(f"less{width}", n, lambda x, a=a, b=b: a(x) < b(x)), (f"lesseq{width}", n, lambda x, a=a, b=b: a(x) <= b(x))]
+            elif family == "equal":
+                made += [(f"equal{width}", n, lambda x, a=a, b=b: a(x) == b(x))]
+            elif width > 1:
+                made += [(f"mul{width}bit{j}", n, lambda x, j=j, a=a, b=b: ((a(x) * b(x)) >> j) & 1) for j in range(2 * width)]
+    elif family == "random":
+        rng = random.Random(f"random|{seed}")
+        return [Task(f"random{n}n{index}", family, n, rng.getrandbits(1 << n)) for n in (3, 4) for index in range(8)]
+    else:
+        raise ValueError(family)
+    return [Task(name, family, inputs, _table(inputs, function)) for name, inputs, function in made]
+
+
+def suite(families, seed: int = 0) -> list[Task]:
+    return [task for family in families for task in tasks(family, seed)]
