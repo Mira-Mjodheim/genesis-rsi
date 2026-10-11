@@ -108,7 +108,7 @@ step that ranks its proposals from the trials of earlier lineages (H2).
 ## 4. CIRCUIT2: both hypotheses refuted
 
 Plan frozen before any run (`provenance/circuit-meta-plan-20261011`); same engine, tasks
-and held-out families as CIRCUIT1; 95 lineages, 11 minutes of processor time, no request.
+and held-out families as CIRCUIT1; 125 lineages, 11 minutes of processor time, no request.
 Records: `experiment/engine/CIRCUIT2/`.
 
 **H1, opening the space: refuted.** With components of up to four inputs from sub-circuits
