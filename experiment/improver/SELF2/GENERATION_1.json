@@ -1,0 +1,40 @@
+{
+  "candidate_sha256": "485c00c5f54dbd47727d716d25a9be3289d98b52abb1bd626502f5de9ce5336d",
+  "comparison": null,
+  "current_after": "g0",
+  "generation": 1,
+  "generation_digest": "fe3ed0f0e7af44817ed7f0d2df4ddf0f066bee859e6efa05087275c8ed3fac1d",
+  "model_requests_so_far": 149,
+  "name": "SELF2",
+  "parent": "g0",
+  "parent_sha256": "485c00c5f54dbd47727d716d25a9be3289d98b52abb1bd626502f5de9ce5336d",
+  "plan_digest": "22bc9305df1414b5dff2c504e25b1f8a029dc95240d77f3fd903ce1651dba9ca",
+  "promoted": false,
+  "reason": "the candidate is the parent",
+  "schema": "genesis-improver-generation-v1",
+  "self_application": {
+    "error": null,
+    "evaluations_used": 6,
+    "lm_calls": 149,
+    "seconds": 2315.1,
+    "stderr_tail": "",
+    "tasks": [
+      [
+        "coloring",
+        2100
+      ],
+      [
+        "qap",
+        2101
+      ],
+      [
+        "regression",
+        2102
+      ],
+      [
+        "tardiness",
+        2103
+      ]
+    ]
+  }
+}

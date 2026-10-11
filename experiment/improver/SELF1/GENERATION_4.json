@@ -1,0 +1,617 @@
+{
+  "candidate_rows": [
+    {
+      "error": null,
+      "family": "binpack",
+      "lm_calls": 6,
+      "score": 0.588333,
+      "seconds": 99.4,
+      "solution_digest": "74351481f60b29982a2e0b822cc068f21ed626f73b8e650fa685d3f236c335f8",
+      "task": 2400
+    },
+    {
+      "error": null,
+      "family": "binpack",
+      "lm_calls": 6,
+      "score": 0.605,
+      "seconds": 102.8,
+      "solution_digest": "5bc7ee042809367af82b19f7bb62454c4ddfe518a5162ca3b7bd331c1ef11005",
+      "task": 2401
+    },
+    {
+      "error": null,
+      "family": "binpack",
+      "lm_calls": 6,
+      "score": 0.601667,
+      "seconds": 113.0,
+      "solution_digest": "835dbae20ee70d79cd2c7e1ba1d57fd64e855d7c24ee670b8c058958673c239e",
+      "task": 2402
+    },
+    {
+      "error": null,
+      "family": "binpack",
+      "lm_calls": 6,
+      "score": 0.596667,
+      "seconds": 109.6,
+      "solution_digest": "12472d9de5dc0041e606f92f216c231d7c492a5d89284b8c5406fb1bc7cd0e39",
+      "task": 2403
+    },
+    {
+      "error": null,
+      "family": "binpack",
+      "lm_calls": 6,
+      "score": 0.591667,
+      "seconds": 117.9,
+      "solution_digest": "ee8e074c20210b6a8b60c27f31050b52215b9ba579ff974a15f57426ad309a82",
+      "task": 2404
+    },
+    {
+      "error": null,
+      "family": "coloring",
+      "lm_calls": 6,
+      "score": 0.914286,
+      "seconds": 91.2,
+      "solution_digest": "0132315aa616e61fd0470122ad169662cf335eb0a36d7bed473a721719c668e1",
+      "task": 2400
+    },
+    {
+      "error": null,
+      "family": "coloring",
+      "lm_calls": 6,
+      "score": 0.914286,
+      "seconds": 101.0,
+      "solution_digest": "d7d42f81299e0bbe57ed406530d02ae8ed48263027f648ef521f60723e13c5b7",
+      "task": 2401
+    },
+    {
+      "error": null,
+      "family": "coloring",
+      "lm_calls": 6,
+      "score": 0.914286,
+      "seconds": 95.9,
+      "solution_digest": "649ee947ffc48e819f20283fb73ef63b4ca3439ed6cc69387b26f9ef6b9eb526",
+      "task": 2402
+    },
+    {
+      "error": null,
+      "family": "coloring",
+      "lm_calls": 6,
+      "score": 0.914286,
+      "seconds": 93.0,
+      "solution_digest": "f2da99233f6aa25a09580275fe169673ceccc7fea893255e5a0646c226ed9a31",
+      "task": 2403
+    },
+    {
+      "error": null,
+      "family": "coloring",
+      "lm_calls": 6,
+      "score": 0.914286,
+      "seconds": 97.6,
+      "solution_digest": "e087bc5816bd294546565ff9a9e58ae5ccab8088e4c09b15e9c47372df186507",
+      "task": 2404
+    },
+    {
+      "error": null,
+      "family": "qap",
+      "lm_calls": 6,
+      "score": 0.151426,
+      "seconds": 95.7,
+      "solution_digest": "8ea343051e649d796042dba321493ad2cc73492480371d4b018b20e6885ea704",
+      "task": 2400
+    },
+    {
+      "error": null,
+      "family": "qap",
+      "lm_calls": 6,
+      "score": 0.141875,
+      "seconds": 106.1,
+      "solution_digest": "2c0018cd5657dfad8ab8abd0046304f979d642c80d043fdf97058fcdc212bc96",
+      "task": 2401
+    },
+    {
+      "error": null,
+      "family": "qap",
+      "lm_calls": 6,
+      "score": 0.140643,
+      "seconds": 101.0,
+      "solution_digest": "53332304bf5cf539ca34249b696d0e455250797a16ad3038131995d731fc05f0",
+      "task": 2402
+    },
+    {
+      "error": null,
+      "family": "qap",
+      "lm_calls": 6,
+      "score": 0.153508,
+      "seconds": 104.6,
+      "solution_digest": "b40a68471f45c498c45cb4df485605b5ab97ae7c4cd2ab93fa5ab01c9329f8f4",
+      "task": 2403
+    },
+    {
+      "error": null,
+      "family": "qap",
+      "lm_calls": 6,
+      "score": 0.140038,
+      "seconds": 105.1,
+      "solution_digest": "055601ae7492cafbe58cd1f30765af62782c79b0dc0ff1a4afbb692977dcc75a",
+      "task": 2404
+    },
+    {
+      "error": null,
+      "family": "regression",
+      "lm_calls": 6,
+      "score": 0.888339,
+      "seconds": 104.0,
+      "solution_digest": "e69b791a18f13a6e79ea7f0adf4da8126a9e111123d666b1bce9199f4547faab",
+      "task": 2400
+    },
+    {
+      "error": null,
+      "family": "regression",
+      "lm_calls": 6,
+      "score": 0.861034,
+      "seconds": 89.0,
+      "solution_digest": "c9d40566213cd4b5157816b775a00fcc25496e674be5b609ebf4cae90d86809f",
+      "task": 2401
+    },
+    {
+      "error": null,
+      "family": "regression",
+      "lm_calls": 6,
+      "score": 0.764311,
+      "seconds": 69.3,
+      "solution_digest": "8a42052ad96c9e9189574c7b438485f8830b784270db637a249e1a004ea75351",
+      "task": 2402
+    },
+    {
+      "error": null,
+      "family": "regression",
+      "lm_calls": 6,
+      "score": 0.978569,
+      "seconds": 78.6,
+      "solution_digest": "1aea56c1c25ecce87e39742b9bc9934e9bc44da90c671babd6bd7c1b55d64708",
+      "task": 2403
+    },
+    {
+      "error": null,
+      "family": "regression",
+      "lm_calls": 6,
+      "score": 0.999995,
+      "seconds": 96.8,
+      "solution_digest": "933176f748c3a186bf97a9a43504bb08b42f3f871ffc248cfa00673bbef41339",
+      "task": 2404
+    },
+    {
+      "error": null,
+      "family": "tardiness",
+      "lm_calls": 6,
+      "score": 0.740293,
+      "seconds": 97.9,
+      "solution_digest": "c1b496ad35522c0f28c441e1bba18ff7df5beede15ba5765a769972f1ee635bc",
+      "task": 2400
+    },
+    {
+      "error": null,
+      "family": "tardiness",
+      "lm_calls": 6,
+      "score": 0.717283,
+      "seconds": 102.3,
+      "solution_digest": "279e5bd6de73e3b698abd073a561c7855002dbbdcd0c0a2b37794729ace6bb2e",
+      "task": 2401
+    },
+    {
+      "error": null,
+      "family": "tardiness",
+      "lm_calls": 6,
+      "score": 0.733045,
+      "seconds": 96.3,
+      "solution_digest": "cf1b460e10bb467bc979339c587b63d6231911fc25c1536052cf3f6be24124b9",
+      "task": 2402
+    },
+    {
+      "error": null,
+      "family": "tardiness",
+      "lm_calls": 6,
+      "score": 0.689382,
+      "seconds": 102.5,
+      "solution_digest": "1c7d7f5e3a3fc888aea2156733aecc813eb5c55971a4d96a8e434d114eacd6b4",
+      "task": 2403
+    },
+    {
+      "error": null,
+      "family": "tardiness",
+      "lm_calls": 6,
+      "score": 0.72994,
+      "seconds": 102.2,
+      "solution_digest": "092725d05e1eed2cfdbc21b60222266265a69944c90d8debe7e26afab6491dfd",
+      "task": 2404
+    },
+    {
+      "error": null,
+      "family": "tsp",
+      "lm_calls": 6,
+      "score": 0.846644,
+      "seconds": 120.3,
+      "solution_digest": "4323f98fdd1f6c9952b0ca3d907a10bce0c222cb1ebf7b686f8731d7d32ca4b9",
+      "task": 2400
+    },
+    {
+      "error": null,
+      "family": "tsp",
+      "lm_calls": 6,
+      "score": 0.830546,
+      "seconds": 118.5,
+      "solution_digest": "c3be46076d197a97b1309d858423fc634885eda2c63d52244c6d81c1ef20292a",
+      "task": 2401
+    },
+    {
+      "error": null,
+      "family": "tsp",
+      "lm_calls": 6,
+      "score": 0.837616,
+      "seconds": 112.6,
+      "solution_digest": "43b78ddfce9a89f9caa242220806cc2365aa21d10e4a213d15f39ed4d2d10597",
+      "task": 2402
+    },
+    {
+      "error": null,
+      "family": "tsp",
+      "lm_calls": 6,
+      "score": 0.0,
+      "seconds": 111.0,
+      "solution_digest": "0212576539d41cfb4cd79c071076aa508024d237914b2e621551da737e19ca01",
+      "task": 2403
+    },
+    {
+      "error": null,
+      "family": "tsp",
+      "lm_calls": 6,
+      "score": 0.839769,
+      "seconds": 112.2,
+      "solution_digest": "a668f509fd64ade09e27a21c5bf96457cea93dc414509bd5507e1c79b5d104ed",
+      "task": 2404
+    }
+  ],
+  "candidate_sha256": "3522939d4c7d534eada30bbc25420dbfa47a0fee13c2a3f9a2fb2be33ac64232",
+  "comparison": {
+    "by_family": {
+      "binpack": {
+        "child": 0.596667,
+        "parent": 0.573
+      },
+      "coloring": {
+        "child": 0.914286,
+        "parent": 0.914286
+      },
+      "qap": {
+        "child": 0.145498,
+        "parent": 0.143649
+      },
+      "regression": {
+        "child": 0.89845,
+        "parent": 0.857277
+      },
+      "tardiness": {
+        "child": 0.721989,
+        "parent": 0.721918
+      },
+      "tsp": {
+        "child": 0.670915,
+        "parent": 0.504041
+      }
+    },
+    "child_mean": 0.657967,
+    "losses": 5,
+    "one_sided_exact_sign_test_p": 0.387207,
+    "parent_mean": 0.619028,
+    "tasks": 30,
+    "wins": 7
+  },
+  "current_after": "g0",
+  "generation": 4,
+  "generation_digest": "607731bcc6b10b62b20824ff281f65cb775c49b1c55236ec46bd6fd3f0439231",
+  "name": "SELF1",
+  "parent": "g0",
+  "parent_rows": [
+    {
+      "error": null,
+      "family": "binpack",
+      "lm_calls": 6,
+      "score": 0.588333,
+      "seconds": 111.0,
+      "solution_digest": "195f47886a3e151fc4699c3dc1e1e7c23cb4a77a88b9c75d5f594f8b87f4861c",
+      "task": 2400
+    },
+    {
+      "error": null,
+      "family": "binpack",
+      "lm_calls": 6,
+      "score": 0.605,
+      "seconds": 113.7,
+      "solution_digest": "fb67040177013ee723122d027c87f38f9cd90841090fba2af7e20426b1381905",
+      "task": 2401
+    },
+    {
+      "error": null,
+      "family": "binpack",
+      "lm_calls": 6,
+      "score": 0.6,
+      "seconds": 106.4,
+      "solution_digest": "10f6167785b97bea4b5fa0cd4b1fa03749cabaa920a45da8378eecbf972c92be",
+      "task": 2402
+    },
+    {
+      "error": null,
+      "family": "binpack",
+      "lm_calls": 6,
+      "score": 0.596667,
+      "seconds": 102.8,
+      "solution_digest": "7e7816ebf82de975296adf3b7cfcaf960137249d0a9a28b603a497fb9cc3cd96",
+      "task": 2403
+    },
+    {
+      "error": null,
+      "family": "binpack",
+      "lm_calls": 6,
+      "score": 0.475,
+      "seconds": 100.9,
+      "solution_digest": "61bc0336ca20626dcf05b2a8352e07ced571da604757ea8f1d9eefe35fb0c6b6",
+      "task": 2404
+    },
+    {
+      "error": null,
+      "family": "coloring",
+      "lm_calls": 6,
+      "score": 0.914286,
+      "seconds": 100.4,
+      "solution_digest": "8538811f1bea495134a6b2b0c9054002aed2b6682f7c61d50484bbe305cd438f",
+      "task": 2400
+    },
+    {
+      "error": null,
+      "family": "coloring",
+      "lm_calls": 6,
+      "score": 0.914286,
+      "seconds": 101.1,
+      "solution_digest": "b94f631bbdafe29bf97c0fb57bfd5df40c42b0dfe4ef30512e6010e39f762166",
+      "task": 2401
+    },
+    {
+      "error": null,
+      "family": "coloring",
+      "lm_calls": 6,
+      "score": 0.914286,
+      "seconds": 93.9,
+      "solution_digest": "6b506c39f456efc0047714231c63499ad0850560c254b26e0e125280473ec4c9",
+      "task": 2402
+    },
+    {
+      "error": null,
+      "family": "coloring",
+      "lm_calls": 6,
+      "score": 0.914286,
+      "seconds": 92.2,
+      "solution_digest": "40cb545288622d9977641ce260f89ccc6622c05ae63f93c6015dfe3de61abfa7",
+      "task": 2403
+    },
+    {
+      "error": null,
+      "family": "coloring",
+      "lm_calls": 6,
+      "score": 0.914286,
+      "seconds": 104.0,
+      "solution_digest": "e79603717d73fb0da8111f70883b34f76ee1bfc09915511b5812ef1483a12974",
+      "task": 2404
+    },
+    {
+      "error": null,
+      "family": "qap",
+      "lm_calls": 6,
+      "score": 0.145705,
+      "seconds": 105.9,
+      "solution_digest": "59a219cdf0f49d7e2aa70789ee718a1888124c8544969f85cad05942231cd29b",
+      "task": 2400
+    },
+    {
+      "error": null,
+      "family": "qap",
+      "lm_calls": 6,
+      "score": 0.137237,
+      "seconds": 113.0,
+      "solution_digest": "fbc6607d68cf593e1b347339aee8bd1704adfd5a09b7b6237b4c1444526e55e3",
+      "task": 2401
+    },
+    {
+      "error": null,
+      "family": "qap",
+      "lm_calls": 6,
+      "score": 0.143679,
+      "seconds": 109.0,
+      "solution_digest": "f9a01055ab8eed3df7d4c735720c6422d611874d24ccf86f04620c22c67028a5",
+      "task": 2402
+    },
+    {
+      "error": null,
+      "family": "qap",
+      "lm_calls": 6,
+      "score": 0.146446,
+      "seconds": 101.6,
+      "solution_digest": "29d945d564ca441e559b6d64db648256d3c298fbc103e7ea827fd3d85f59f08f",
+      "task": 2403
+    },
+    {
+      "error": null,
+      "family": "qap",
+      "lm_calls": 6,
+      "score": 0.145178,
+      "seconds": 105.7,
+      "solution_digest": "22c82e79935eb3af1733d93601a3822bf12f35471332d1d041948c448a78727d",
+      "task": 2404
+    },
+    {
+      "error": null,
+      "family": "regression",
+      "lm_calls": 6,
+      "score": 0.606285,
+      "seconds": 101.3,
+      "solution_digest": "4c355c40d5ed82c2d1c5f9484ef09e12100171b99a1d8f24dd7074c6cbfbc23f",
+      "task": 2400
+    },
+    {
+      "error": null,
+      "family": "regression",
+      "lm_calls": 6,
+      "score": 0.923978,
+      "seconds": 70.6,
+      "solution_digest": "061f5ef8865297f1646c1811e88b88ee6d6f02123ba8e08bd68b82e4f9ac22e1",
+      "task": 2401
+    },
+    {
+      "error": null,
+      "family": "regression",
+      "lm_calls": 6,
+      "score": 0.757573,
+      "seconds": 85.6,
+      "solution_digest": "f84ebacb2c9b16346a7f5d65280674eab9b5759f5166dfc57b75d219a3295090",
+      "task": 2402
+    },
+    {
+      "error": null,
+      "family": "regression",
+      "lm_calls": 6,
+      "score": 0.998553,
+      "seconds": 110.4,
+      "solution_digest": "418e939b5ff01b9cb10b12d2c2d09e87e5767a06030eb38730e2eaf99c874714",
+      "task": 2403
+    },
+    {
+      "error": null,
+      "family": "regression",
+      "lm_calls": 6,
+      "score": 0.999995,
+      "seconds": 77.2,
+      "solution_digest": "2256184ecaf59ac2aeddaf07f7a963cab5e2580b047d30c8653438d926123175",
+      "task": 2404
+    },
+    {
+      "error": null,
+      "family": "tardiness",
+      "lm_calls": 6,
+      "score": 0.740398,
+      "seconds": 105.6,
+      "solution_digest": "c5a6675bd6e2d8386ac12916da5848aa7c89816e73fe55584ef803d2efe6f05e",
+      "task": 2400
+    },
+    {
+      "error": null,
+      "family": "tardiness",
+      "lm_calls": 6,
+      "score": 0.717318,
+      "seconds": 108.4,
+      "solution_digest": "20f9d031a2a5996e2bcaa58a06696f1726a291443e6d6f0279e7675cc2245fcb",
+      "task": 2401
+    },
+    {
+      "error": null,
+      "family": "tardiness",
+      "lm_calls": 6,
+      "score": 0.732813,
+      "seconds": 100.9,
+      "solution_digest": "9b105ab02684dde38e837ade8bfb54323f1fccd97715488a70e4bcc09eaf9f69",
+      "task": 2402
+    },
+    {
+      "error": null,
+      "family": "tardiness",
+      "lm_calls": 6,
+      "score": 0.689213,
+      "seconds": 97.0,
+      "solution_digest": "c37de0d14abbb294d482879e8cf9f645e2d3f02576cec9fcabb473536b763272",
+      "task": 2403
+    },
+    {
+      "error": null,
+      "family": "tardiness",
+      "lm_calls": 6,
+      "score": 0.729848,
+      "seconds": 110.3,
+      "solution_digest": "6fb61a4995e76ecdd76f6e3f434f5482256572df047e7fa06d43f2f7a2abda2e",
+      "task": 2404
+    },
+    {
+      "error": null,
+      "family": "tsp",
+      "lm_calls": 6,
+      "score": 0.0,
+      "seconds": 120.7,
+      "solution_digest": "0212576539d41cfb4cd79c071076aa508024d237914b2e621551da737e19ca01",
+      "task": 2400
+    },
+    {
+      "error": null,
+      "family": "tsp",
+      "lm_calls": 6,
+      "score": 0.840602,
+      "seconds": 128.7,
+      "solution_digest": "91c228b093b99f70e07bf561a2b06d4f1ce71e8438eba2251d55ff9796662646",
+      "task": 2401
+    },
+    {
+      "error": null,
+      "family": "tsp",
+      "lm_calls": 6,
+      "score": 0.0,
+      "seconds": 120.7,
+      "solution_digest": "0212576539d41cfb4cd79c071076aa508024d237914b2e621551da737e19ca01",
+      "task": 2402
+    },
+    {
+      "error": null,
+      "family": "tsp",
+      "lm_calls": 6,
+      "score": 0.835874,
+      "seconds": 112.8,
+      "solution_digest": "f0c349ff54a33ef1a9bd42f3dfa55e41e2451495f7013f7335d4a52dfcf88adc",
+      "task": 2403
+    },
+    {
+      "error": null,
+      "family": "tsp",
+      "lm_calls": 6,
+      "score": 0.843729,
+      "seconds": 118.4,
+      "solution_digest": "18017183dcce62042f8328ad1073f37e25313f07ddd56d5ab8b2166f53e3dfd2",
+      "task": 2404
+    }
+  ],
+  "parent_sha256": "485c00c5f54dbd47727d716d25a9be3289d98b52abb1bd626502f5de9ce5336d",
+  "plan_digest": "ec4a1000a6e879ccaa772769c12fb0fd83a9bd5a30ead9c0103558089c58795b",
+  "promoted": false,
+  "reason": null,
+  "schema": "genesis-improver-generation-v1",
+  "self_application": {
+    "error": null,
+    "evaluations_used": 6,
+    "lm_calls": 149,
+    "seconds": 774.3,
+    "stderr_tail": "",
+    "tasks": [
+      [
+        "tardiness",
+        1400
+      ],
+      [
+        "tsp",
+        1401
+      ],
+      [
+        "binpack",
+        1402
+      ],
+      [
+        "coloring",
+        1403
+      ]
+    ]
+  },
+  "spent_usd_so_far": 3.7972
+}
