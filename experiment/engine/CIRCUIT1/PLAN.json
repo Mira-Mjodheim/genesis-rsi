@@ -1,0 +1,89 @@
+{
+  "budget": 30000,
+  "claim_boundary": "one domain, one engine; nothing here establishes general recursive self-improvement",
+  "control_family": [
+    "random"
+  ],
+  "family_set_a": [
+    "and",
+    "or",
+    "parity",
+    "mux"
+  ],
+  "family_set_b": [
+    "equal",
+    "adder",
+    "majority"
+  ],
+  "generations_at_most": 30,
+  "held_out_families": [
+    "less",
+    "subtract",
+    "popcount",
+    "exactly",
+    "multiply"
+  ],
+  "learning_families": [
+    "and",
+    "or",
+    "parity",
+    "equal",
+    "mux",
+    "adder",
+    "majority"
+  ],
+  "machinery_commit": "aa5cfb8d420e313b0dfc0e5cefddf11a21411ed7",
+  "machinery_digests": {
+    "genesis/circuit_engine.py": "389c7ce26f1f20b1a66a543ef4550aad3c589665a59b4f84624b681267027305",
+    "genesis/circuit_tasks.py": "ae5beab0f78758d05d17736c7ff2a6254eedf0e94361f9bd81ddd99c09392530",
+    "scripts/run_circuit_lineage.py": "ddde800c607579bd05411c9ce1206c05435b90a259de7df3be62d3573a7a3986"
+  },
+  "name": "CIRCUIT1",
+  "plan_digest": "03b49b25464213b09910c3c085aa69b6fefa34b61828d7a47571179bf6cafe2b",
+  "procedure_variants": {
+    "arity": [
+      2,
+      3
+    ],
+    "drop_unused": [
+      true,
+      false
+    ],
+    "heaviest": [
+      1,
+      4
+    ],
+    "ranking": [
+      "support",
+      "saving",
+      "random"
+    ]
+  },
+  "questions": {
+    "1 accumulation": "held-out tasks solved by the last engine of `lineage` against `frozen`, same budget, paired by seed; and against `frozen` with 10 and 100 times the budget",
+    "2 cumulative": "held-out tasks solved by `lineage` against `together` (as many components, one step)",
+    "3 ranking": "held-out tasks solved by `lineage` against `random`",
+    "4 yield": "tasks gained on the learning set at each step of `lineage`, in order: does a later step gain more than an earlier one, and what ends the lineage",
+    "5 improving the improver": "for every procedure variant, learning tasks gained by its lineage on family set A and on family set B (mean over seeds). Is the variant that gains most on A better on B than the seed procedure, and what is the rank correlation of the variants between A and B"
+  },
+  "reading": "differences are counts of tasks, reported per seed with their mean; five seeds support no significance claim beyond an exact sign test at 1/32. Whatever the outcome, the procedure variants are chosen by a fixed search written by hand: question 5 measures whether a better improver can be selected and carries over, not recursion",
+  "schema": "genesis-circuit-lineage-plan-v1",
+  "second_budget": 5000,
+  "seed_procedure": {
+    "arity": 3,
+    "drop_unused": true,
+    "heaviest": 4,
+    "min_support": 2,
+    "ranking": "support",
+    "tried": 6
+  },
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "stopping_rule": "a lineage ends at the first step that keeps no component, or at the generation limit",
+  "unit_of_compute": "one component application in the search; identical budgets per task for every arm"
+}
