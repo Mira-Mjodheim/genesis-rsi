@@ -2143,6 +2143,14 @@
         "results/maintenance/merged-branches-20261005.json"
       ]
     },
+    "7273f1ef5478c03a777c828ef512ace0426f57aa": {
+      "subject": "Add a second model channel for improver lineages, bounded per day and resumable",
+      "preserved_by": "provenance/circuit-engine-plan-20261011",
+      "cited_in": [
+        "docs/COMMIT_CITATIONS.json",
+        "experiment/improver/SELF2/PLAN.json"
+      ]
+    },
     "73138f22e11e3a77fa7d3b99663f531b6074f6c1": {
       "subject": "docs: register V23 L5 result lineage citations",
       "preserved_by": "main",
@@ -2882,6 +2890,14 @@
         "results/rsi-v49/coupled-fresh-20261005/MANIFEST.json"
       ]
     },
+    "a2b551b3dab845e4d383bed3d21c57540d76f3fa": {
+      "subject": "Add an improver that can be applied to itself, and the protocol of its lineages",
+      "preserved_by": "provenance/circuit-engine-plan-20261011",
+      "cited_in": [
+        "docs/COMMIT_CITATIONS.json",
+        "experiment/improver/SELF1/PLAN.json"
+      ]
+    },
     "a2c12e19a0249b964e10928e156ca9c3c1d0f9bf": {
       "subject": "research(v42): preserve exact consumed-data pilot evidence",
       "preserved_by": "main",
@@ -2973,6 +2989,14 @@
         "docs/state-history/PROJECT_STATE_2026-08-24.yaml",
         "experiments/M092/PROTOCOL.json",
         "scripts/check_m092b_protocol.py"
+      ]
+    },
+    "aa5cfb8d420e313b0dfc0e5cefddf11a21411ed7": {
+      "subject": "A circuit engine that learns its own components; second bench for improvers",
+      "preserved_by": "provenance/circuit-engine-plan-20261011",
+      "cited_in": [
+        "docs/COMMIT_CITATIONS.json",
+        "experiment/engine/CIRCUIT1/PLAN.json"
       ]
     },
     "aaf86bb63d6e2d27e9965f5dcc5871c0cd79fd69": {
@@ -3687,7 +3711,7 @@
     },
     "d45ba3ee583ee0f6f729f6c95824d95a8c2523a8": {
       "subject": "Add a diagnosis that names a limiting component from single-component interventions",
-      "preserved_by": "provenance/repair-interventions-preregistration-20261010",
+      "preserved_by": "main",
       "cited_in": [
         "docs/COMMIT_CITATIONS.json",
         "experiment/g12/DEV_REPAIR_INTERVENTIONS1_PREREG.json"
