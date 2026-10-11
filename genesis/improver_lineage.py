@@ -24,12 +24,13 @@ import time
 import uuid
 from typing import Callable, Mapping, Sequence
 
+from genesis import improver_seed
 from genesis.repair_lineage import BudgetExhausted, Envelope, Ledger, ModelUnavailable, _send
 from genesis.trust_root import digest_of
 
 IMAGE = "python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1"
 RUNTIME = Path(__file__).with_name("improver_runtime.py")
-SEED = Path(__file__).with_name("improver_seed.py")
+SEED = Path(improver_seed.__file__)
 MODEL = "anthropic/claude-haiku-5.5"
 OBJECT_BUDGET = {"lm_calls": 3, "evaluations": 10, "seconds": 600}
 CHILDREN = 6
