@@ -719,3 +719,19 @@ place of Haiku 5.5 on 16 cases: 11 against 6, 5 gained and none lost, sign test 
 uncorrected for six comparisons. The model is named; the early stops were a symptom. Ten
 cases are repaired under no arm. See
 [REPAIR_INTERVENTIONS_2026-10-10.md](REPAIR_INTERVENTIONS_2026-10-10.md).
+
+Two lineages of improvers applied to themselves promoted nothing (SELF1, Haiku 5.5, five
+rewrites rejected; SELF2 stopped after one generation), on a bench that could not separate
+improvers; on a rebuilt bench a strong model reaches in one request what a loop reaches in
+three (0.921 against 0.920). See
+[SELF_IMPROVER_LINEAGES_2026-10-11.md](SELF_IMPROVER_LINEAGES_2026-10-11.md). Genesis is
+reoriented toward two architectures: capability in its own executable code (A), or in the
+weights of a small open model retrained on verified data (B, not started). First
+prototype of A, CIRCUIT1, preregistered, no model: a circuit engine that learns components
+from its own solutions solves 12.8 held-out tasks of 41 against 11.0 for the frozen engine,
+11.4 when the same components are added in one step, 18 for the frozen engine with ten
+times the budget. A later step sometimes gains more than an earlier one, lineages stop
+within seven steps, and an improvement procedure selected on some families is not better
+on others (rank correlation 0.10). Cumulative improvement of its own machinery: yes, small.
+Better at improving itself: not shown. See
+[GENESIS_REORIENTATION_2026-10-11.md](GENESIS_REORIENTATION_2026-10-11.md).

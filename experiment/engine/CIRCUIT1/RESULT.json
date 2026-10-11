@@ -1,0 +1,1631 @@
+{
+  "by_budget": {
+    "30000": {
+      "components_kept_by_lineage": [
+        [
+          {
+            "arity": 2,
+            "name": "nand",
+            "nands": 1,
+            "steps": [
+              [
+                0,
+                1
+              ]
+            ],
+            "table": 7,
+            "weight": 1
+          }
+        ],
+        [
+          {
+            "arity": 2,
+            "name": "g2c4",
+            "nands": 5,
+            "steps": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                3,
+                4
+              ],
+              [
+                2,
+                5
+              ]
+            ],
+            "table": 9,
+            "weight": 1
+          },
+          {
+            "arity": 2,
+            "name": "g5c3",
+            "nands": 2,
+            "steps": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "table": 13,
+            "weight": 2
+          },
+          {
+            "arity": 2,
+            "name": "nand",
+            "nands": 1,
+            "steps": [
+              [
+                0,
+                1
+              ]
+            ],
+            "table": 7,
+            "weight": 2
+          }
+        ],
+        [
+          {
+            "arity": 2,
+            "name": "g4c2",
+            "nands": 5,
+            "steps": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                4
+              ],
+              [
+                3,
+                5
+              ]
+            ],
+            "table": 6,
+            "weight": 1
+          },
+          {
+            "arity": 3,
+            "name": "g2c4",
+            "nands": 6,
+            "steps": [
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                2
+              ],
+              [
+                3,
+                4
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                5,
+                5
+              ],
+              [
+                6,
+                7
+              ]
+            ],
+            "table": 254,
+            "weight": 1
+          },
+          {
+            "arity": 2,
+            "name": "nand",
+            "nands": 1,
+            "steps": [
+              [
+                0,
+                1
+              ]
+            ],
+            "table": 7,
+            "weight": 1
+          },
+          {
+            "arity": 2,
+            "name": "g3c2",
+            "nands": 2,
+            "steps": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "table": 13,
+            "weight": 2
+          },
+          {
+            "arity": 1,
+            "name": "g5c1",
+            "nands": 1,
+            "steps": [
+              [
+                0,
+                0
+              ]
+            ],
+            "table": 1,
+            "weight": 3
+          }
+        ],
+        [
+          {
+            "arity": 2,
+            "name": "nand",
+            "nands": 1,
+            "steps": [
+              [
+                0,
+                1
+              ]
+            ],
+            "table": 7,
+            "weight": 1
+          },
+          {
+            "arity": 2,
+            "name": "g1c3",
+            "nands": 3,
+            "steps": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                3
+              ]
+            ],
+            "table": 14,
+            "weight": 2
+          }
+        ],
+        [
+          {
+            "arity": 2,
+            "name": "nand",
+            "nands": 1,
+            "steps": [
+              [
+                0,
+                1
+              ]
+            ],
+            "table": 7,
+            "weight": 1
+          }
+        ]
+      ],
+      "frozen": {
+        "control": [
+          9,
+          8,
+          9,
+          8,
+          8
+        ],
+        "held_out": [
+          11,
+          11,
+          11,
+          11,
+          11
+        ],
+        "learning_set_by_generation": [
+          [
+            17
+          ],
+          [
+            16
+          ],
+          [
+            13
+          ],
+          [
+            13
+          ],
+          [
+            12
+          ]
+        ],
+        "unseen": [
+          0,
+          1,
+          4,
+          4,
+          5
+        ]
+      },
+      "frozen_x10": {
+        "held_out": 18
+      },
+      "frozen_x100": {
+        "held_out": 18
+      },
+      "lineage": {
+        "control": [
+          9,
+          8,
+          10,
+          8,
+          8
+        ],
+        "held_out": [
+          11,
+          17,
+          14,
+          11,
+          11
+        ],
+        "learning_set_by_generation": [
+          [
+            17,
+            17
+          ],
+          [
+            16,
+            17,
+            21,
+            22,
+            22,
+            23,
+            23
+          ],
+          [
+            13,
+            14,
+            14,
+            14,
+            17,
+            20,
+            20
+          ],
+          [
+            13,
+            14,
+            14
+          ],
+          [
+            12,
+            12
+          ]
+        ],
+        "unseen": [
+          0,
+          3,
+          6,
+          4,
+          5
+        ]
+      },
+      "random": {
+        "control": [
+          9,
+          8,
+          10,
+          9,
+          8
+        ],
+        "held_out": [
+          11,
+          11,
+          14,
+          14,
+          11
+        ],
+        "learning_set_by_generation": [
+          [
+            17,
+            17
+          ],
+          [
+            16,
+            17,
+            17
+          ],
+          [
+            13,
+            14,
+            14,
+            14,
+            17,
+            20,
+            20
+          ],
+          [
+            13,
+            14,
+            18,
+            18,
+            18,
+            19,
+            19,
+            19
+          ],
+          [
+            12,
+            12
+          ]
+        ],
+        "unseen": [
+          0,
+          1,
+          6,
+          6,
+          5
+        ]
+      },
+      "together": {
+        "control": [
+          9,
+          7,
+          8,
+          8,
+          8
+        ],
+        "held_out": [
+          11,
+          12,
+          12,
+          11,
+          11
+        ],
+        "learning_set_by_generation": [
+          [
+            17,
+            17
+          ],
+          [
+            16,
+            15
+          ],
+          [
+            13,
+            13
+          ],
+          [
+            13,
+            13
+          ],
+          [
+            12,
+            12
+          ]
+        ],
+        "unseen": [
+          0,
+          1,
+          4,
+          4,
+          5
+        ]
+      }
+    },
+    "5000": {
+      "components_kept_by_lineage": [
+        [
+          {
+            "arity": 2,
+            "name": "nand",
+            "nands": 1,
+            "steps": [
+              [
+                0,
+                1
+              ]
+            ],
+            "table": 7,
+            "weight": 1
+          },
+          {
+            "arity": 2,
+            "name": "g1c3",
+            "nands": 3,
+            "steps": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                3
+              ]
+            ],
+            "table": 14,
+            "weight": 2
+          }
+        ],
+        [
+          {
+            "arity": 2,
+            "name": "nand",
+            "nands": 1,
+            "steps": [
+              [
+                0,
+                1
+              ]
+            ],
+            "table": 7,
+            "weight": 1
+          },
+          {
+            "arity": 2,
+            "name": "g2c4",
+            "nands": 3,
+            "steps": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                2,
+                3
+              ]
+            ],
+            "table": 8,
+            "weight": 1
+          },
+          {
+            "arity": 2,
+            "name": "g1c3",
+            "nands": 3,
+            "steps": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                3
+              ]
+            ],
+            "table": 14,
+            "weight": 2
+          }
+        ],
+        [
+          {
+            "arity": 2,
+            "name": "nand",
+            "nands": 1,
+            "steps": [
+              [
+                0,
+                1
+              ]
+            ],
+            "table": 7,
+            "weight": 1
+          },
+          {
+            "arity": 3,
+            "name": "g2c5",
+            "nands": 6,
+            "steps": [
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                2
+              ],
+              [
+                3,
+                4
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                5,
+                5
+              ],
+              [
+                6,
+                7
+              ]
+            ],
+            "table": 254,
+            "weight": 2
+          }
+        ],
+        [
+          {
+            "arity": 2,
+            "name": "nand",
+            "nands": 1,
+            "steps": [
+              [
+                0,
+                1
+              ]
+            ],
+            "table": 7,
+            "weight": 1
+          },
+          {
+            "arity": 3,
+            "name": "g2c5",
+            "nands": 6,
+            "steps": [
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                2
+              ],
+              [
+                3,
+                4
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                5,
+                5
+              ],
+              [
+                6,
+                7
+              ]
+            ],
+            "table": 254,
+            "weight": 2
+          }
+        ],
+        [
+          {
+            "arity": 2,
+            "name": "g2c2",
+            "nands": 5,
+            "steps": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                4
+              ],
+              [
+                3,
+                5
+              ]
+            ],
+            "table": 6,
+            "weight": 1
+          },
+          {
+            "arity": 2,
+            "name": "g3c3",
+            "nands": 3,
+            "steps": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                2,
+                3
+              ]
+            ],
+            "table": 8,
+            "weight": 2
+          },
+          {
+            "arity": 2,
+            "name": "nand",
+            "nands": 1,
+            "steps": [
+              [
+                0,
+                1
+              ]
+            ],
+            "table": 7,
+            "weight": 4
+          }
+        ]
+      ],
+      "frozen": {
+        "control": [
+          8,
+          7,
+          8,
+          8,
+          8
+        ],
+        "held_out": [
+          8,
+          8,
+          8,
+          8,
+          8
+        ],
+        "learning_set_by_generation": [
+          [
+            13
+          ],
+          [
+            12
+          ],
+          [
+            10
+          ],
+          [
+            10
+          ],
+          [
+            10
+          ]
+        ],
+        "unseen": [
+          0,
+          1,
+          3,
+          3,
+          3
+        ]
+      },
+      "frozen_x10": {
+        "held_out": 14
+      },
+      "frozen_x100": {
+        "held_out": 18
+      },
+      "lineage": {
+        "control": [
+          8,
+          7,
+          9,
+          8,
+          8
+        ],
+        "held_out": [
+          8,
+          11,
+          8,
+          8,
+          16
+        ],
+        "learning_set_by_generation": [
+          [
+            13,
+            14,
+            14
+          ],
+          [
+            12,
+            13,
+            14,
+            14
+          ],
+          [
+            10,
+            11,
+            13,
+            13
+          ],
+          [
+            10,
+            11,
+            12,
+            12
+          ],
+          [
+            10,
+            11,
+            17,
+            19,
+            19
+          ]
+        ],
+        "unseen": [
+          0,
+          1,
+          3,
+          4,
+          4
+        ]
+      },
+      "random": {
+        "control": [
+          7,
+          8,
+          9,
+          8,
+          8
+        ],
+        "held_out": [
+          9,
+          16,
+          8,
+          8,
+          16
+        ],
+        "learning_set_by_generation": [
+          [
+            13,
+            14,
+            14,
+            15,
+            15
+          ],
+          [
+            12,
+            13,
+            14,
+            18,
+            21,
+            22,
+            22
+          ],
+          [
+            10,
+            11,
+            13,
+            13
+          ],
+          [
+            10,
+            11,
+            12,
+            12
+          ],
+          [
+            10,
+            11,
+            17,
+            19,
+            19
+          ]
+        ],
+        "unseen": [
+          0,
+          3,
+          3,
+          4,
+          4
+        ]
+      },
+      "together": {
+        "control": [
+          8,
+          7,
+          8,
+          7,
+          4
+        ],
+        "held_out": [
+          8,
+          9,
+          9,
+          9,
+          7
+        ],
+        "learning_set_by_generation": [
+          [
+            13,
+            13
+          ],
+          [
+            12,
+            13
+          ],
+          [
+            10,
+            10
+          ],
+          [
+            10,
+            11
+          ],
+          [
+            10,
+            10
+          ]
+        ],
+        "unseen": [
+          0,
+          1,
+          4,
+          3,
+          3
+        ]
+      }
+    }
+  },
+  "name": "CIRCUIT1",
+  "plan_digest": "03b49b25464213b09910c3c085aa69b6fefa34b61828d7a47571179bf6cafe2b",
+  "procedure_variants": [
+    {
+      "A": 3.6,
+      "A_held_out": [
+        13,
+        13,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        16,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 2,
+        "drop_unused": true,
+        "heaviest": 1,
+        "min_support": 2,
+        "ranking": "support",
+        "tried": 6
+      }
+    },
+    {
+      "A": 3.6,
+      "A_held_out": [
+        13,
+        13,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        16,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 2,
+        "drop_unused": true,
+        "heaviest": 1,
+        "min_support": 2,
+        "ranking": "saving",
+        "tried": 6
+      }
+    },
+    {
+      "A": 3.6,
+      "A_held_out": [
+        13,
+        13,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        16,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 2,
+        "drop_unused": true,
+        "heaviest": 1,
+        "min_support": 2,
+        "ranking": "random",
+        "tried": 6
+      }
+    },
+    {
+      "A": 4.0,
+      "A_held_out": [
+        13,
+        8,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        14,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 2,
+        "drop_unused": true,
+        "heaviest": 4,
+        "min_support": 2,
+        "ranking": "support",
+        "tried": 6
+      }
+    },
+    {
+      "A": 4.0,
+      "A_held_out": [
+        13,
+        8,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        14,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 2,
+        "drop_unused": true,
+        "heaviest": 4,
+        "min_support": 2,
+        "ranking": "saving",
+        "tried": 6
+      }
+    },
+    {
+      "A": 4.0,
+      "A_held_out": [
+        13,
+        8,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        14,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 2,
+        "drop_unused": true,
+        "heaviest": 4,
+        "min_support": 2,
+        "ranking": "random",
+        "tried": 6
+      }
+    },
+    {
+      "A": 3.6,
+      "A_held_out": [
+        13,
+        13,
+        13,
+        13,
+        13
+      ],
+      "B": 2.4,
+      "B_held_out": [
+        15,
+        11,
+        15,
+        11,
+        15
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 2,
+        "drop_unused": false,
+        "heaviest": 1,
+        "min_support": 2,
+        "ranking": "support",
+        "tried": 6
+      }
+    },
+    {
+      "A": 3.6,
+      "A_held_out": [
+        13,
+        13,
+        13,
+        13,
+        13
+      ],
+      "B": 2.4,
+      "B_held_out": [
+        15,
+        11,
+        15,
+        11,
+        15
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 2,
+        "drop_unused": false,
+        "heaviest": 1,
+        "min_support": 2,
+        "ranking": "saving",
+        "tried": 6
+      }
+    },
+    {
+      "A": 3.6,
+      "A_held_out": [
+        13,
+        13,
+        13,
+        13,
+        13
+      ],
+      "B": 2.4,
+      "B_held_out": [
+        15,
+        11,
+        15,
+        11,
+        15
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 2,
+        "drop_unused": false,
+        "heaviest": 1,
+        "min_support": 2,
+        "ranking": "random",
+        "tried": 6
+      }
+    },
+    {
+      "A": 4.0,
+      "A_held_out": [
+        13,
+        8,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        14,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 2,
+        "drop_unused": false,
+        "heaviest": 4,
+        "min_support": 2,
+        "ranking": "support",
+        "tried": 6
+      }
+    },
+    {
+      "A": 4.0,
+      "A_held_out": [
+        13,
+        8,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        14,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 2,
+        "drop_unused": false,
+        "heaviest": 4,
+        "min_support": 2,
+        "ranking": "saving",
+        "tried": 6
+      }
+    },
+    {
+      "A": 4.0,
+      "A_held_out": [
+        13,
+        8,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        14,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 2,
+        "drop_unused": false,
+        "heaviest": 4,
+        "min_support": 2,
+        "ranking": "random",
+        "tried": 6
+      }
+    },
+    {
+      "A": 5.0,
+      "A_held_out": [
+        9,
+        11,
+        9,
+        11,
+        9
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        16,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 3,
+        "drop_unused": true,
+        "heaviest": 1,
+        "min_support": 2,
+        "ranking": "support",
+        "tried": 6
+      }
+    },
+    {
+      "A": 5.0,
+      "A_held_out": [
+        9,
+        11,
+        9,
+        11,
+        9
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        16,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 3,
+        "drop_unused": true,
+        "heaviest": 1,
+        "min_support": 2,
+        "ranking": "saving",
+        "tried": 6
+      }
+    },
+    {
+      "A": 5.0,
+      "A_held_out": [
+        9,
+        11,
+        9,
+        11,
+        9
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        16,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 3,
+        "drop_unused": true,
+        "heaviest": 1,
+        "min_support": 2,
+        "ranking": "random",
+        "tried": 6
+      }
+    },
+    {
+      "A": 4.2,
+      "A_held_out": [
+        10,
+        8,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        14,
+        11,
+        16
+      ],
+      "is_seed": true,
+      "procedure": {
+        "arity": 3,
+        "drop_unused": true,
+        "heaviest": 4,
+        "min_support": 2,
+        "ranking": "support",
+        "tried": 6
+      }
+    },
+    {
+      "A": 4.2,
+      "A_held_out": [
+        10,
+        8,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        14,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 3,
+        "drop_unused": true,
+        "heaviest": 4,
+        "min_support": 2,
+        "ranking": "saving",
+        "tried": 6
+      }
+    },
+    {
+      "A": 4.2,
+      "A_held_out": [
+        10,
+        8,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        14,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 3,
+        "drop_unused": true,
+        "heaviest": 4,
+        "min_support": 2,
+        "ranking": "random",
+        "tried": 6
+      }
+    },
+    {
+      "A": 5.0,
+      "A_held_out": [
+        9,
+        11,
+        9,
+        11,
+        9
+      ],
+      "B": 2.8,
+      "B_held_out": [
+        14,
+        11,
+        15,
+        11,
+        14
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 3,
+        "drop_unused": false,
+        "heaviest": 1,
+        "min_support": 2,
+        "ranking": "support",
+        "tried": 6
+      }
+    },
+    {
+      "A": 5.0,
+      "A_held_out": [
+        9,
+        11,
+        9,
+        11,
+        9
+      ],
+      "B": 2.8,
+      "B_held_out": [
+        14,
+        11,
+        15,
+        11,
+        14
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 3,
+        "drop_unused": false,
+        "heaviest": 1,
+        "min_support": 2,
+        "ranking": "saving",
+        "tried": 6
+      }
+    },
+    {
+      "A": 5.0,
+      "A_held_out": [
+        9,
+        11,
+        9,
+        11,
+        9
+      ],
+      "B": 2.8,
+      "B_held_out": [
+        14,
+        11,
+        15,
+        11,
+        14
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 3,
+        "drop_unused": false,
+        "heaviest": 1,
+        "min_support": 2,
+        "ranking": "random",
+        "tried": 6
+      }
+    },
+    {
+      "A": 4.2,
+      "A_held_out": [
+        10,
+        8,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        14,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 3,
+        "drop_unused": false,
+        "heaviest": 4,
+        "min_support": 2,
+        "ranking": "support",
+        "tried": 6
+      }
+    },
+    {
+      "A": 4.2,
+      "A_held_out": [
+        10,
+        8,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        14,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 3,
+        "drop_unused": false,
+        "heaviest": 4,
+        "min_support": 2,
+        "ranking": "saving",
+        "tried": 6
+      }
+    },
+    {
+      "A": 4.2,
+      "A_held_out": [
+        10,
+        8,
+        13,
+        13,
+        13
+      ],
+      "B": 3.0,
+      "B_held_out": [
+        16,
+        11,
+        14,
+        11,
+        16
+      ],
+      "is_seed": false,
+      "procedure": {
+        "arity": 3,
+        "drop_unused": false,
+        "heaviest": 4,
+        "min_support": 2,
+        "ranking": "random",
+        "tried": 6
+      }
+    }
+  ],
+  "questions": {
+    "1 accumulation": {
+      "frozen": 11.0,
+      "frozen_x10": 18,
+      "frozen_x100": 18,
+      "held_out_tasks": 41,
+      "lineage": 12.8
+    },
+    "2 cumulative": {
+      "lineage": 12.8,
+      "together": 11.4
+    },
+    "3 ranking": {
+      "lineage": 12.8,
+      "random": 12.2
+    },
+    "4 yield": {
+      "tasks_gained_at_each_step_by_seed": [
+        [
+          0
+        ],
+        [
+          1,
+          4,
+          1,
+          0,
+          1,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          3,
+          3,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0
+        ]
+      ]
+    },
+    "5 improving the improver": {
+      "best_on_A": {
+        "A": 5.0,
+        "B": 3.0,
+        "procedure": {
+          "arity": 3,
+          "drop_unused": true,
+          "heaviest": 1,
+          "min_support": 2,
+          "ranking": "support",
+          "tried": 6
+        }
+      },
+      "rank_correlation_A_B": 0.096,
+      "seed_procedure": {
+        "A": 4.2,
+        "B": 3.0
+      }
+    }
+  },
+  "result_digest": "a6bb4762122612ff955f623d23bfe0c883033ea11c9b061c76b716d88c2f4d2a",
+  "schema": "genesis-circuit-lineage-result-v1",
+  "seconds": 4813.1
+}

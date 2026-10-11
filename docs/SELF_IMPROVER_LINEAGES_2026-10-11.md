@@ -90,5 +90,20 @@ A new bench, frozen by a new plan; SELF1 and SELF2 stay as they are, reproducibl
 - **Wilcoxon signed-rank test** over the paired tasks, exact and one-sided, in place of the
   sign test with a margin: scores are now graded on every family.
 
-The bench is checked before any lineage is planned: an improver limited to one request
-must come out below the seed, and the seed run twice on the same tasks gives the noise.
+## The second bench, checked before any lineage (pilots, not evidence)
+
+Thirty development tasks (twelve on Codex), the same for every improver; scores are host
+scores on the twenty hidden instances.
+
+| Model | One request | Seed improver (three requests) | Tasks won / lost | Signed-rank |
+|---|---|---|---|---|
+| gpt-6.1-sol, low effort (Codex) | 0.921 | 0.920 | — | — |
+| gpt-oss-120b | 0.729 | 0.753 | 12 / 5 | 0.07 |
+| gpt-oss-20b | 0.600 | 0.707 | 15 / 3 | 0.009 |
+
+The bench separates improvers only where the model is weak. On the strong model one
+request already reaches what three reach: no improver can be told from another, and no
+lineage is worth running. On the weakest model a loop helps, which is known, and a lineage
+there would measure how well a scaffold compensates a small model. No third lineage is
+planned: see [GENESIS_REORIENTATION_2026-10-11.md](GENESIS_REORIENTATION_2026-10-11.md).
+Cost of the pilots: 48 Codex requests and about USD 0.15.
