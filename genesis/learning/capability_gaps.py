@@ -21,13 +21,28 @@ from genesis.trust_root import digest_of
 GAP_SCHEMA = "genesis-capability-gap-diagnosis-v1"
 
 
+def _target_prefixes(root: Path, prefixes: Sequence[str]) -> list[Path]:
+    resolved_root = root.resolve()
+    paths: list[Path] = []
+    for raw in prefixes:
+        text = str(raw).strip()
+        if not text:
+            continue
+        candidate = Path(text)
+        if candidate.is_absolute():
+            path = candidate
+        else:
+            path = root / candidate
+        resolved = path.resolve()
+        if resolved != resolved_root and resolved_root not in resolved.parents:
+            raise ValueError(f"target prefix escapes root: {text}")
+        paths.append(path)
+    return paths
+
+
 def _target_suffixes(root: Path, prefixes: Sequence[str]) -> list[str]:
     suffixes: set[str] = set()
-    for raw in prefixes:
-        normalized = str(raw).strip("/")
-        if not normalized:
-            continue
-        path = root / normalized
+    for path in _target_prefixes(root, prefixes):
         if path.is_file():
             suffixes.add(path.suffix.lower())
             continue
