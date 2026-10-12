@@ -41,6 +41,7 @@ def _target_prefixes(root: Path, prefixes: Sequence[str]) -> list[Path]:
 
 
 def _target_suffixes(root: Path, prefixes: Sequence[str]) -> list[str]:
+    resolved_root = root.resolve()
     suffixes: set[str] = set()
     for path in _target_prefixes(root, prefixes):
         if path.is_file():
@@ -49,6 +50,9 @@ def _target_suffixes(root: Path, prefixes: Sequence[str]) -> list[str]:
         if path.is_dir():
             for item in path.rglob("*"):
                 if item.is_file():
+                    resolved = item.resolve()
+                    if resolved != resolved_root and resolved_root not in resolved.parents:
+                        raise ValueError("target prefix escapes root")
                     suffixes.add(item.suffix.lower())
     return sorted(suffixes)
 

@@ -129,3 +129,22 @@ def test_rejects_symlink_to_file_outside_root(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         capability_gaps.diagnose(root, result, target_prefixes=["lien.py"])
+
+def test_nested_symlink_outside_root_does_not_leak_suffix(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    directory = root / "inside"
+    directory.mkdir(parents=True)
+    outside = tmp_path / "external.xyz"
+    outside.write_text("private", encoding="utf-8")
+    (directory / "external.xyz").symlink_to(outside)
+    with pytest.raises(ValueError, match="escapes root") as error:
+        capability_gaps._target_suffixes(root, ["inside"])
+    assert ".xyz" not in str(error.value)
+
+
+def test_regular_nested_file_remains_in_scope(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    directory = root / "inside"
+    directory.mkdir(parents=True)
+    (directory / "legitimate.py").write_text("ok", encoding="utf-8")
+    assert capability_gaps._target_suffixes(root, ["inside"]) == [".py"]
