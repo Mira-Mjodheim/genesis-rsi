@@ -19,7 +19,24 @@ REGISTERED_HUMAN_IDENTITIES = {
     # This is the same registered human, not a second contributor or wildcard.
     ("Anthony Mets", "contact@mjodheim.be"),
 }
-REGISTERED_PULL_REQUEST_AUTHORS = {"mjodheim"}
+# Registered non-human technical actors, distinct from legal human authorship.
+REGISTERED_AI_IDENTITIES = {("Mira", "mira.mjodheim.be@gmail.com"), ("Mira", "mira-ai@noreply.github.com")}
+REGISTERED_PULL_REQUEST_AUTHORS = {"mjodheim", "Mira-Mjodheim"}
+AI_PR_DISCLOSURE = "Provenance: Mira (AI execution)"
+# Explicitly owner-reviewed, narrow initial scope: AI may change known
+# implementation files and matching ordinary tests, never evaluation oracles.
+# Expand only through a separate, independently reviewed governance PR.
+AI_ALLOWED_PATHS = frozenset({
+    "genesis/learning/capability_gaps.py",
+    "genesis/learning/failure_model.py",
+    "genesis/learning/self_extension.py",
+    "genesis/learning/distillation.py",
+    "tests/test_capability_gaps.py",
+    "tests/test_failure_model.py",
+    "tests/test_failure_driven_self_extension.py",
+    "tests/test_distillation.py",
+})
+
 COAUTHOR_PATTERN = re.compile(r"^co-authored-by:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
 IDENTITY_PATTERN = re.compile(r"^(.+?)\s*<([^<>]+)>$")
 TOOL_CREDIT_PATTERN = re.compile(
@@ -51,7 +68,7 @@ def audit_commit_records(records: Iterable[Mapping[str, str]]) -> list[str]:
                 problems.append(f"{commit}: {field} contains blocked attribution {marker!r}")
         for role in ("author", "committer"):
             identity = (record[f"{role}_name"], record[f"{role}_email"])
-            if identity not in REGISTERED_HUMAN_IDENTITIES:
+            if identity not in REGISTERED_HUMAN_IDENTITIES and identity not in REGISTERED_AI_IDENTITIES:
                 problems.append(f"{commit}: {role} is not a registered human identity")
         for trailer in COAUTHOR_PATTERN.findall(record.get("body", "")):
             marker = _blocked(trailer)
@@ -92,6 +109,8 @@ def audit_pull_request_payload(payload: Mapping[str, object]) -> list[str]:
     problems = []
     if fields["author"] not in REGISTERED_PULL_REQUEST_AUTHORS:
         problems.append("pull request author is not a registered human identity")
+    if fields["author"] == "Mira-Mjodheim" and AI_PR_DISCLOSURE not in fields["body"]:
+        problems.append("Mira pull request lacks explicit AI provenance declaration")
     for field, value in fields.items():
         marker = _blocked(value)
         if marker:
@@ -142,6 +161,19 @@ def commit_records(base: str, head: str) -> list[dict[str, str]]:
     return records
 
 
+def audit_ai_paths(paths: Iterable[str]) -> list[str]:
+    """Keep non-human contributions outside governance, trust roots and frozen records."""
+    return [f"AI contribution cannot modify protected path: {path}" for path in paths
+            if path not in AI_ALLOWED_PATHS]
+
+
+def changed_paths(base: str, head: str) -> list[str]:
+    """Include deleted paths and both sides of a rename; never let scope checks miss them."""
+    result = subprocess.run(["git", "diff", "--name-only", "-z", "--no-renames",
+                             f"{base}...{head}"], check=True, capture_output=True)
+    return [part.decode("utf-8") for part in result.stdout.split(bytes([0])) if part]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", required=True)
@@ -152,12 +184,16 @@ def main() -> int:
     payload = json.loads(arguments.event.read_text(encoding="utf-8"))
     problems = audit_commit_records(commit_records(arguments.base, arguments.head))
     problems.extend(audit_pull_request_payload(payload))
+    pr = payload.get("pull_request") or {}
+    author = (pr.get("user") or {}).get("login") if isinstance(pr, dict) else None
+    if author == "Mira-Mjodheim":
+        problems.extend(audit_ai_paths(changed_paths(arguments.base, arguments.head)))
     if problems:
         print("FAIL — Attribution policy")
         for problem in problems:
             print(f"  - {problem}")
         return 1
-    print("OK   — Human-only repository attribution")
+    print("OK   — Registered provenance and protected-source boundaries")
     return 0
 
 

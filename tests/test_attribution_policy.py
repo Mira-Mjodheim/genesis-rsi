@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from check_attribution_policy import (
+    audit_ai_paths,
     audit_commit_records,
     audit_pull_request_payload,
 )
@@ -131,3 +132,55 @@ def test_workflow_runs_the_policy_from_the_trusted_base_revision():
     assert "ref: ${{ github.event.pull_request.base.sha }}" in workflow
     assert "Fetch the proposed commit without checking it out" in workflow
     assert "Check commit and pull-request attribution from trusted code" in workflow
+
+
+def test_mira_is_explicitly_nonhuman_and_has_a_registered_technical_identity():
+    assert audit_commit_records([_record(
+        author_name="Mira", author_email="mira.mjodheim.be@gmail.com",
+        committer_name="Mira", committer_email="mira-ai@noreply.github.com",
+    )]) == []
+
+
+def test_mira_pull_request_requires_a_disclosed_provenance():
+    pr = {"title": "Fix capability-gap path validation",
+          "body": "Provenance: Mira (AI execution); independently reviewed by Leona.",
+          "head": {"ref": "mira/genesis-99660ab004f9"},
+          "user": {"login": "Mira-Mjodheim"}}
+    assert audit_pull_request_payload({"pull_request": pr}) == []
+    pr["body"] = "A patch with passing tests"
+    assert audit_pull_request_payload({"pull_request": pr}) == [
+        "Mira pull request lacks explicit AI provenance declaration"]
+
+
+def test_ai_contribution_cannot_change_repository_governance_or_trust_roots():
+    assert audit_ai_paths(["genesis/learning/capability_gaps.py",
+                           "tests/test_capability_gaps.py",
+                           "genesis/learning/failure_model.py"]) == []
+    dangerous = [
+        ".github/workflows/ci.yml",
+        "scripts/check_attribution_policy.py",
+        "genesis/trust_root.py",
+        "genesis/cognitive_measurement.py",
+        "genesis/learning/new_scoring_module.py",
+        "metamorphosis/evaluation_cost.py",
+        "tests/test_attribution_policy.py",
+        "tests/test_g12_training_bank.py",
+        "experiment/rsi_v31/bank.py",
+        "experiment/rsi_v31/PROTOCOL.md",
+        "docs/IP_PUBLICATION_POLICY.md",
+        "archives/workflows/m013e-sealed-evaluation.yml",
+        "genesis/learning/distillation.py.backup",
+        "genesis/learning/../../scripts/check_attribution_policy.py",
+    ]
+    assert audit_ai_paths(dangerous) == [
+        f"AI contribution cannot modify protected path: {path}" for path in dangerous
+    ]
+
+
+def test_ai_allowlist_requires_exact_reviewed_paths_not_matching_directory_prefixes():
+    assert audit_ai_paths(["tests/test_failure_model.py"]) == []
+    assert len(audit_ai_paths([
+        "tests/test_failure_model.py/sealed.py",
+        "tests/test_other.py",
+        "genesis/core/self_model.py",
+    ])) == 3
