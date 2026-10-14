@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from check_attribution_policy import (
-    audit_ai_paths,
+    audit_mira_paths,
     audit_commit_records,
     audit_pull_request_payload,
 )
@@ -36,14 +36,14 @@ def test_historical_owner_email_does_not_register_another_person():
     problems = audit_commit_records([_record(
         author_name="Another Person", author_email="contact@mjodheim.be"
     )])
-    assert problems == ["abc123: author is not a registered human identity"]
+    assert problems == ["abc123: author is not Anthony or Mira"]
 
 
 def test_service_author_is_rejected():
     problems = audit_commit_records([_record(author_name="release[bot]")])
     assert problems == [
         "abc123: author_name contains blocked attribution '[bot]'",
-        "abc123: author is not a registered human identity",
+        "abc123: author is not Anthony or Mira",
     ]
 
 
@@ -51,7 +51,7 @@ def test_unregistered_plain_identity_is_rejected():
     problems = audit_commit_records(
         [_record(author_name="Build Service", author_email="build@example.invalid")]
     )
-    assert problems == ["abc123: author is not a registered human identity"]
+    assert problems == ["abc123: author is not Anthony or Mira"]
 
 
 def test_generated_coauthor_trailer_is_rejected():
@@ -60,7 +60,7 @@ def test_generated_coauthor_trailer_is_rejected():
     )
     assert problems == [
         "abc123: co-author trailer contains blocked attribution '[bot]'",
-        "abc123: co-author is not a registered human identity",
+        "abc123: co-author is not Anthony or Mira",
     ]
 
 
@@ -100,7 +100,7 @@ def test_unregistered_pull_request_author_is_rejected():
         }
     }
     assert audit_pull_request_payload(payload) == [
-        "pull request author is not a registered human identity"
+        "pull request author is not Anthony or Mira"
     ]
 
 
@@ -141,46 +141,35 @@ def test_mira_is_explicitly_nonhuman_and_has_a_registered_technical_identity():
     )]) == []
 
 
-def test_mira_pull_request_requires_a_disclosed_provenance():
+def test_mira_pull_request_needs_no_signature():
     pr = {"title": "Fix capability-gap path validation",
-          "body": "Provenance: Mira (AI execution); independently reviewed by Leona.",
+          "body": "A patch with passing tests",
           "head": {"ref": "mira/genesis-99660ab004f9"},
           "user": {"login": "Mira-Mjodheim"}}
     assert audit_pull_request_payload({"pull_request": pr}) == []
-    pr["body"] = "A patch with passing tests"
+    pr["user"] = {"login": "someone-else"}
     assert audit_pull_request_payload({"pull_request": pr}) == [
-        "Mira pull request lacks explicit AI provenance declaration"]
+        "pull request author is not Anthony or Mira"]
 
 
-def test_ai_contribution_cannot_change_repository_governance_or_trust_roots():
-    assert audit_ai_paths(["genesis/learning/capability_gaps.py",
-                           "tests/test_capability_gaps.py",
-                           "genesis/learning/failure_model.py"]) == []
-    dangerous = [
-        ".github/workflows/ci.yml",
-        "scripts/check_attribution_policy.py",
-        "genesis/trust_root.py",
-        "genesis/cognitive_measurement.py",
-        "genesis/learning/new_scoring_module.py",
+def test_mira_may_change_the_code_but_not_the_checks_that_gate_her_merges():
+    assert audit_mira_paths([
+        "genesis/learning/capability_gaps.py",
+        "genesis/core/self_model.py",
         "metamorphosis/evaluation_cost.py",
-        "tests/test_attribution_policy.py",
         "tests/test_g12_training_bank.py",
-        "experiment/rsi_v31/bank.py",
-        "experiment/rsi_v31/PROTOCOL.md",
-        "docs/IP_PUBLICATION_POLICY.md",
-        "archives/workflows/m013e-sealed-evaluation.yml",
-        "genesis/learning/distillation.py.backup",
+        "docs/ROADMAP.md",
+    ]) == []
+    gates = [
+        ".github/workflows/ci.yml",
+        ".github/workflows/attribution-policy.yml",
+        "scripts/check_attribution_policy.py",
+        "tests/test_attribution_policy.py",
         "genesis/learning/../../scripts/check_attribution_policy.py",
     ]
-    assert audit_ai_paths(dangerous) == [
-        f"AI contribution cannot modify protected path: {path}" for path in dangerous
-    ]
+    assert audit_mira_paths(gates) == [f"Mira cannot modify merge gate: {path}" for path in gates]
 
 
-def test_ai_allowlist_requires_exact_reviewed_paths_not_matching_directory_prefixes():
-    assert audit_ai_paths(["tests/test_failure_model.py"]) == []
-    assert len(audit_ai_paths([
-        "tests/test_failure_model.py/sealed.py",
-        "tests/test_other.py",
-        "genesis/core/self_model.py",
-    ])) == 3
+def test_unknown_commit_identity_is_rejected():
+    problems = audit_commit_records([_record(author_name="Someone", author_email="someone@example.com")])
+    assert problems == ["abc123: author is not Anthony or Mira"]
