@@ -42,6 +42,20 @@ def test_two_identical_runs_give_the_same_fingerprints():
     assert lineage.verify_lineage(json.loads(json.dumps(one))) is True
 
 
+def test_the_initial_state_passes_verify_state():
+    state = lineage.initial_state()
+    assert lineage.verify_state(state) is None
+    assert lineage.verify_state(json.loads(json.dumps(state))) is None
+    assert lineage.verify_lineage([state]) is True
+
+
+def test_initial_state_with_a_list_library_is_accepted_before_and_after_a_json_round_trip():
+    state = lineage.initial_state()
+    assert isinstance(state["library"], list)
+    assert lineage.verify_state(state) is None
+    assert lineage.verify_state(json.loads(json.dumps(state))) is None
+
+
 def _spend_more(chain):
     chain[2]["spent"]["synthesis"] += 1
 
@@ -130,25 +144,21 @@ def test_held_out_and_control_tasks_are_refused():
 
 
 def test_selection_uses_learning_tasks_only_and_never_asks_for_held_out(monkeypatch):
-    original = tasks.tasks
-
-    def guarded(family, *args, **kwargs):
-        if family in tasks.HELD_OUT:
-            raise AssertionError(f"held-out family requested: {family}")
-        return original(family, *args, **kwargs)
-
     real = engine.improved_by
     seen = []
 
     def spy(first, given, *args, **kwargs):
-        seen.append([task.name for task in given])
+        seen.append(list(given))
         return real(first, given, *args, **kwargs)
 
-    monkeypatch.setattr(tasks, "tasks", guarded)
     monkeypatch.setattr(engine, "improved_by", spy)
     states = _run(3)
     assert len(states) == 4 and seen
-    assert all(names == [task.name for task in LEARN] for names in seen)
+    refused = set(tasks.HELD_OUT) | set(getattr(tasks, "CONTROL", ()))
+    for received in seen:
+        assert [task.name for task in received] == [task.name for task in LEARN]
+        assert all(task.family in tasks.LEARN for task in received)
+        assert not {task.family for task in received} & refused
 
 
 def test_a_parent_is_kept_when_no_candidate_is_strictly_better():
@@ -189,3 +199,67 @@ def test_bad_arguments_are_refused():
             lineage.run_lineage(bad, LEARN, BUDGET, BIG, 1)
         with pytest.raises(lineage.LineageError):
             lineage.run_lineage(1, LEARN, BUDGET, bad, 1)
+
+
+def test_a_state_reloaded_from_json_is_refused_explicitly_by_step():
+    states = _run(2)
+    assert states[1].engine is not None
+    reloaded = json.loads(json.dumps(states[1]))
+    assert lineage.verify_state(reloaded) is None
+    with pytest.raises(lineage.LineageError, match="no live library"):
+        lineage.step(reloaded, LEARN, BUDGET, Meter(BIG), _rng(1))
+    live = lineage.step(states[1], LEARN, BUDGET, Meter(BIG), _rng(1))
+    assert lineage.verify_lineage([*states[:2], live]) is True
+
+
+def test_replace_procedure_neutralises_the_selection_fields_and_gives_a_new_digest():
+    states = _run(3)
+    source = states[3]
+    replaced = lineage.replace_procedure(source, _procedure(admit=11))
+    assert replaced["adopted"] is False and replaced["evaluated"] == []
+    assert replaced["score"] is None and replaced["parent_score"] is None
+    assert replaced["spent"] == source["spent"] and replaced["exhausted"] == source["exhausted"]
+    assert replaced["library"] == source["library"]
+    assert replaced["digest"] != source["digest"]
+    assert lineage.verify_lineage(states[:3] + [replaced]) is True
+
+
+BAD_FIELDS = (
+    ("score", "x"),
+    ("score", [1]),
+    ("score", [1, True]),
+    ("score", [1, 2.5]),
+    ("score", [1, 2, 3]),
+    ("parent_score", [0, 1, 2]),
+    ("parent_score", "x"),
+    ("adopted", 1),
+    ("adopted", "yes"),
+    ("exhausted", None),
+    ("exhausted", 0),
+    ("evaluated", "abc"),
+    ("evaluated", [1]),
+    ("library", {}),
+    ("library", "x"),
+    ("library", [1]),
+    ("library", [{}, 3]),
+)
+
+
+@pytest.mark.parametrize("position", [1, -1])
+def test_a_resealed_state_with_badly_typed_fields_is_refused(position):
+    states = _run(3)
+    for name, value in BAD_FIELDS:
+        chain = [dict(state) for state in states]
+        chain[position] = lineage.seal({**chain[position], name: value})
+        with pytest.raises(lineage.LineageError):
+            lineage.verify_lineage(chain)
+
+
+def test_the_last_link_is_checked_even_when_its_digest_is_consistent():
+    states = _run(3)
+    last = lineage.seal({**states[-1], "score": "arbitrary"})
+    assert last["digest"] != states[-1]["digest"]
+    with pytest.raises(lineage.LineageError):
+        lineage.verify_state(last)
+    with pytest.raises(lineage.LineageError):
+        lineage.verify_lineage([*states[:-1], last])

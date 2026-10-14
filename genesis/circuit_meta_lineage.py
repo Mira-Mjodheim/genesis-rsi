@@ -33,6 +33,12 @@ Stage (b), choices documented here (fixed by this module, not frozen by any prot
 
 Limits: the baseline engine.attempt on the current library is not metered (that API takes no meter);
 the scale of one unit per synthesis NAND is not frozen; the improvement of the improver is not measured here.
+
+Reloaded states: Engine has no from_record, so a state rebuilt from JSON carries no live library and
+step refuses it with LineageError (it can still be verified). verify_state checks the types and shapes
+of every field (booleans, list of strings, scores as None or two integers, library as a list of component records),
+but the library is NOT reconstructed: only the integrity of the digest, the chain and the field shapes
+are guaranteed, not that the library content is a genuine Engine record.
 """
 
 import json
@@ -124,8 +130,12 @@ def verify_state(state):
     if not isinstance(state, dict) or set(state) != FIELDS or state["schema"] != SCHEMA:
         raise LineageError("unexpected state fields")
     body = {key: value for key, value in state.items() if key != "digest"}
-    if digest_of(_plain(body)) != state["digest"]:
-        raise LineageError("own fingerprint does not match the content")
+    recomputed = digest_of(_plain(body))
+    if recomputed != state["digest"]:
+        raise LineageError(
+            "own fingerprint does not match the content: "
+            f"stored={state['digest']!r}, recomputed={recomputed!r}"
+        )
     index, spent = state["index"], state["spent"]
     if isinstance(index, bool) or not isinstance(index, int) or index < 0:
         raise LineageError("bad index")
@@ -133,6 +143,22 @@ def verify_state(state):
         raise LineageError("bad spending posts")
     if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in spent.values()):
         raise LineageError("bad spending")
+    for flag in ("adopted", "exhausted"):
+        if not isinstance(state[flag], bool):
+            raise LineageError(f"{flag} must be a boolean")
+    evaluated = state["evaluated"]
+    if not isinstance(evaluated, list) or not all(isinstance(item, str) for item in evaluated):
+        raise LineageError("evaluated must be a list of strings")
+    for name in ("score", "parent_score"):
+        value = state[name]
+        if value is None:
+            continue
+        if not (isinstance(value, list) and len(value) == 2 and all(isinstance(item, int) and not isinstance(item, bool) for item in value)):
+            raise LineageError(f"{name} must be None or a list of two integers")
+    library = state["library"]
+    if not isinstance(library, list) or not all(isinstance(item, dict) for item in library):
+        raise LineageError("library must be a list of dictionaries")
+    _plain(library)
     try:
         cp.from_record(state["procedure"])
     except cp.ProcedureError as error:
@@ -156,10 +182,10 @@ def verify_lineage(states):
 def _engine_of(state):
     live = getattr(state, "engine", None)
     if live is None:
-        build = getattr(Engine, "from_record", None)
-        if build is None:
-            raise LineageError("no live library for this state")
-        live = build(state["library"])
+        raise LineageError(
+            "no live library for this state: Engine has no from_record, "
+            "so a state reloaded from JSON cannot be stepped"
+        )
     if _plain(live.record()) != state["library"]:
         raise LineageError("the library does not match its record")
     return live
@@ -218,7 +244,15 @@ def _lot(parent, parent_digest, rng):
 
 
 def step(state, tasks, task_budget, meter, rng):
-    """Next generation state (see the module docstring); never spends past ``meter``."""
+    """Next generation state (see the module docstring); never spends past ``meter``.
+
+    exhausted=True is also set when the share (remaining // candidates left) given to one candidate
+    runs out, even if the global meter still has budget.
+
+    Asymmetry: the parent is evaluated (stage a) on the whole meter, each candidate only on a share
+    of what remains. The comparison is therefore conservative against the candidates: a candidate is
+    adopted only if it beats the parent despite the smaller budget.
+    """
     learn = _learn_tasks(tasks)
     _count("task_budget", task_budget)
     verify_state(state)
@@ -299,9 +333,17 @@ def replace_procedure(state, procedure):
     """Same state with another procedure (e.g. the ancestral one); the library is untouched.
 
     The result is re-sealed, so it is a sibling of ``state``: same index and parent, new fingerprint.
+
+    The selection outcome described the procedure that was replaced, so adopted, evaluated, score and
+    parent_score are reset to neutral values (False, [], None, None). spent and exhausted are kept as
+    they are: they describe the generation that was built, not the replacing procedure.
     """
     cp.validate(procedure)
     verify_state(state)
     body = dict(state)
     body["procedure"] = cp.to_record(procedure)
+    body["adopted"] = False
+    body["evaluated"] = []
+    body["score"] = None
+    body["parent_score"] = None
     return _seal(body, getattr(state, "engine", None))
