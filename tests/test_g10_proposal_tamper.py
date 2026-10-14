@@ -59,6 +59,13 @@ def _tamper_path(p, path):
     node[path[-1]] = _bump(node[path[-1]])
 
 
+def _get_path(p, path):
+    node = p
+    for k in path:
+        node = node[k]
+    return node
+
+
 _GAP_REASON = (
     "known gap: validate_proposal only checks the global proposal_digest "
     "and does not re-derive material_change / discovery_digest"
@@ -87,24 +94,29 @@ def test_intact_proposal_validates(proposal):
 )
 def test_tamper_without_redigest_rejected(proposal, path):
     p = _copy(proposal)
+    original = _get_path(p, path)
     _tamper_path(p, path)
-    with pytest.raises(RecursiveChainError):
+    assert _get_path(p, path) != original
+    with pytest.raises(RecursiveChainError, match="proposal digest does not reproduce"):
         recursive_chain.validate_proposal(p)
 
 
 @pytest.mark.parametrize(
-    "key,value",
+    "key,value,match",
     [
-        ("lineage_produced", False),
-        ("prospective_holdout_visible", True),
-        ("mutable_lineage_owns_verdict", True),
+        ("lineage_produced", False, "not lineage-produced"),
+        ("prospective_holdout_visible", True, "saw the prospective holdout"),
+        ("mutable_lineage_owns_verdict", True, "may not own G10 verdict"),
     ],
 )
-def test_semantic_tamper_with_redigest_rejected(proposal, key, value):
+def test_semantic_tamper_with_redigest_rejected(proposal, key, value, match):
     p = _copy(proposal)
-    _set_everywhere(p, key, value)
+    assert key in p
+    original = p[key]
+    assert original != value
+    p[key] = value
     redigest(p)
-    with pytest.raises(RecursiveChainError):
+    with pytest.raises(RecursiveChainError, match=match):
         recursive_chain.validate_proposal(p)
 
 
@@ -121,8 +133,13 @@ def test_forged_parent_rejected(proposal):
 
 @pytest.mark.xfail(strict=True, raises=pytest.fail.Exception, reason=_GAP_REASON)
 def test_known_gap_material_change_to_level(proposal):
+    # Le xfail strict prouve aussi que redigest produit un digest valide :
+    # un redigest défaillant ferait lever RecursiveChainError et le xfail
+    # strict échouerait (XPASS ou erreur).
     p = _copy(proposal)
+    original = _get_path(p, ("material_change", "to_level"))
     _tamper_path(p, ("material_change", "to_level"))
+    assert _get_path(p, ("material_change", "to_level")) != original
     redigest(p)
     with pytest.raises(RecursiveChainError):
         recursive_chain.validate_proposal(p)
@@ -130,8 +147,13 @@ def test_known_gap_material_change_to_level(proposal):
 
 @pytest.mark.xfail(strict=True, raises=pytest.fail.Exception, reason=_GAP_REASON)
 def test_known_gap_discovery_digest(proposal):
+    # Le xfail strict prouve aussi que redigest produit un digest valide :
+    # un redigest défaillant ferait lever RecursiveChainError et le xfail
+    # strict échouerait (XPASS ou erreur).
     p = _copy(proposal)
+    original = _get_path(p, ("discovery_digest",))
     _tamper_path(p, ("discovery_digest",))
+    assert _get_path(p, ("discovery_digest",)) != original
     redigest(p)
     with pytest.raises(RecursiveChainError):
         recursive_chain.validate_proposal(p)
