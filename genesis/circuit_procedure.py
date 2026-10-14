@@ -179,6 +179,45 @@ def random_procedure(rng: Any, n_steps: int) -> Procedure:
     return p
 
 
+def mutate(procedure: Procedure, rng: Any) -> Procedure:
+    """Mutation de portes et de câblage, toujours valide : recâble une entrée d'un pas vers une
+    référence antérieure, ajoute ou retire le dernier pas (dans la limite de MAX_STEPS), ou change
+    une sortie de priorité ou l'admission. Reproductible avec la graine de rng ; l'original n'est
+    pas modifié."""
+    validate(procedure)
+    n = procedure.n_inputs
+    steps = [tuple(step) for step in procedure.steps]
+    outs = list(procedure.priority_outputs)
+    admit = procedure.admit_output
+    operations = ["priority", "admit"]
+    if steps:
+        operations += ["rewire", "shrink"]
+    if len(steps) < MAX_STEPS:
+        operations.append("grow")
+    operation = rng.choice(operations)
+    if operation == "rewire":
+        k, side = rng.randrange(len(steps)), rng.randrange(2)
+        step = list(steps[k])
+        step[side] = rng.randrange(n + k)
+        steps[k] = tuple(step)
+    elif operation == "grow":
+        bound = n + len(steps)
+        steps.append((rng.randrange(bound), rng.randrange(bound)))
+    elif operation == "shrink":
+        steps.pop()
+        total = n + len(steps)
+        outs = [o if o < total else rng.randrange(total) for o in outs]
+        if admit >= total:
+            admit = rng.randrange(total)
+    elif operation == "priority":
+        outs[rng.randrange(len(outs))] = rng.randrange(n + len(steps))
+    else:
+        admit = rng.randrange(n + len(steps))
+    result = Procedure(n, tuple(steps), tuple(outs), admit)
+    validate(result)
+    return result
+
+
 def replay_digest(procedure: Procedure, cases: Iterable[Sequence[int]]) -> str:
     """Empreinte des sorties sur une liste fixe de vecteurs de traits."""
     outputs = []
