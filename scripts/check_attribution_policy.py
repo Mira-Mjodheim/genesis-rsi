@@ -1,4 +1,4 @@
-"""Reject non-human Git attribution and tool-credit pull-request metadata."""
+"""Accept only Anthony and Mira as authors; reject other attribution and tool-credit metadata."""
 
 from __future__ import annotations
 
@@ -19,23 +19,14 @@ REGISTERED_HUMAN_IDENTITIES = {
     # This is the same registered human, not a second contributor or wildcard.
     ("Anthony Mets", "contact@mjodheim.be"),
 }
-# Registered non-human technical actors, distinct from legal human authorship.
-REGISTERED_AI_IDENTITIES = {("Mira", "mira.mjodheim.be@gmail.com"), ("Mira", "mira-ai@noreply.github.com")}
+# Mira works on the repository on her own and merges when CI is green (owner decision, 14 October 2026).
+REGISTERED_MIRA_IDENTITIES = {("Mira", "mira.mjodheim.be@gmail.com"), ("Mira", "mira-ai@noreply.github.com")}
+REGISTERED_IDENTITIES = REGISTERED_HUMAN_IDENTITIES | REGISTERED_MIRA_IDENTITIES
 REGISTERED_PULL_REQUEST_AUTHORS = {"mjodheim", "Mira-Mjodheim"}
-AI_PR_DISCLOSURE = "Provenance: Mira (AI execution)"
-# Explicitly owner-reviewed, narrow initial scope: AI may change known
-# implementation files and matching ordinary tests, never evaluation oracles.
-# Expand only through a separate, independently reviewed governance PR.
-AI_ALLOWED_PATHS = frozenset({
-    "genesis/learning/capability_gaps.py",
-    "genesis/learning/failure_model.py",
-    "genesis/learning/self_extension.py",
-    "genesis/learning/distillation.py",
-    "tests/test_capability_gaps.py",
-    "tests/test_failure_model.py",
-    "tests/test_failure_driven_self_extension.py",
-    "tests/test_distillation.py",
-})
+# The only paths Mira may not change: the checks that decide whether her own pull requests may merge.
+# Frozen protocols and sealed records stay guarded by the CI freeze checks.
+MIRA_PROTECTED_PREFIXES = (".github/",)
+MIRA_PROTECTED_PATHS = frozenset({"scripts/check_attribution_policy.py", "tests/test_attribution_policy.py"})
 
 COAUTHOR_PATTERN = re.compile(r"^co-authored-by:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
 IDENTITY_PATTERN = re.compile(r"^(.+?)\s*<([^<>]+)>$")
@@ -68,8 +59,8 @@ def audit_commit_records(records: Iterable[Mapping[str, str]]) -> list[str]:
                 problems.append(f"{commit}: {field} contains blocked attribution {marker!r}")
         for role in ("author", "committer"):
             identity = (record[f"{role}_name"], record[f"{role}_email"])
-            if identity not in REGISTERED_HUMAN_IDENTITIES and identity not in REGISTERED_AI_IDENTITIES:
-                problems.append(f"{commit}: {role} is not a registered human identity")
+            if identity not in REGISTERED_IDENTITIES:
+                problems.append(f"{commit}: {role} is not Anthony or Mira")
         for trailer in COAUTHOR_PATTERN.findall(record.get("body", "")):
             marker = _blocked(trailer)
             if marker:
@@ -78,9 +69,9 @@ def audit_commit_records(records: Iterable[Mapping[str, str]]) -> list[str]:
                 )
             match = IDENTITY_PATTERN.fullmatch(trailer.strip())
             identity = match.groups() if match else None
-            if identity not in REGISTERED_HUMAN_IDENTITIES:
+            if identity not in REGISTERED_IDENTITIES:
                 problems.append(
-                    f"{commit}: co-author is not a registered human identity"
+                    f"{commit}: co-author is not Anthony or Mira"
                 )
         body = record.get("body", "")
         if TOOL_CREDIT_PATTERN.search(body):
@@ -108,9 +99,7 @@ def audit_pull_request_payload(payload: Mapping[str, object]) -> list[str]:
     }
     problems = []
     if fields["author"] not in REGISTERED_PULL_REQUEST_AUTHORS:
-        problems.append("pull request author is not a registered human identity")
-    if fields["author"] == "Mira-Mjodheim" and AI_PR_DISCLOSURE not in fields["body"]:
-        problems.append("Mira pull request lacks explicit AI provenance declaration")
+        problems.append("pull request author is not Anthony or Mira")
     for field, value in fields.items():
         marker = _blocked(value)
         if marker:
@@ -161,10 +150,11 @@ def commit_records(base: str, head: str) -> list[dict[str, str]]:
     return records
 
 
-def audit_ai_paths(paths: Iterable[str]) -> list[str]:
-    """Keep non-human contributions outside governance, trust roots and frozen records."""
-    return [f"AI contribution cannot modify protected path: {path}" for path in paths
-            if path not in AI_ALLOWED_PATHS]
+def audit_mira_paths(paths: Iterable[str]) -> list[str]:
+    """Mira may change anything except the checks that gate her own merges."""
+    return [f"Mira cannot modify merge gate: {path}" for path in paths
+            if path in MIRA_PROTECTED_PATHS or path.startswith(MIRA_PROTECTED_PREFIXES)
+            or ".." in path.split("/")]
 
 
 def changed_paths(base: str, head: str) -> list[str]:
@@ -187,13 +177,13 @@ def main() -> int:
     pr = payload.get("pull_request") or {}
     author = (pr.get("user") or {}).get("login") if isinstance(pr, dict) else None
     if author == "Mira-Mjodheim":
-        problems.extend(audit_ai_paths(changed_paths(arguments.base, arguments.head)))
+        problems.extend(audit_mira_paths(changed_paths(arguments.base, arguments.head)))
     if problems:
         print("FAIL — Attribution policy")
         for problem in problems:
             print(f"  - {problem}")
         return 1
-    print("OK   — Registered provenance and protected-source boundaries")
+    print("OK   — Authors are Anthony or Mira; merge gates untouched")
     return 0
 
 
