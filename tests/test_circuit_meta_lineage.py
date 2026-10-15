@@ -224,6 +224,43 @@ def test_a_candidate_is_adopted_only_when_strictly_better():
             assert after["procedure"] == before["procedure"]
 
 
+def test_adoption_of_a_strictly_better_candidate_with_a_controlled_fixture(monkeypatch):
+    base = lineage.replace_procedure(lineage.initial_state(), _procedure(admit=11))
+    expected = {"parent": base["procedure"]["procedure_digest"]}
+    calls = []
+
+    def fake_improved_by(current, given, budget, baseline, procedure, meter, generation=None):
+        digest = cp.to_record(procedure)["procedure_digest"]
+        calls.append(digest)
+        score = (0, -5) if digest == expected["parent"] else (1, -5)
+        return current, score, {"spent": {}, "exhausted": False}
+
+    monkeypatch.setattr(engine, "improved_by", fake_improved_by)
+    monkeypatch.setattr(lineage, "_score", lambda x: x)
+    retained = []
+    for seed in range(8):
+        expected["parent"] = base["procedure"]["procedure_digest"]
+        out = lineage.step(base, LEARN, BUDGET, Meter(BIG), _rng(seed))
+        assert out["evaluated"]
+        retained.append(seed)
+        assert out["adopted"] is True
+        assert out["exhausted"] is False
+        assert out["parent_score"] == [0, -5] and out["score"] == [1, -5]
+        adopted = out["procedure"]["procedure_digest"]
+        assert adopted == out["evaluated"][0]
+        assert adopted != base["procedure"]["procedure_digest"]
+        assert out["procedure"] != base["procedure"]
+        assert out["library"] == base["library"]
+        assert out["parent"] == base["digest"]
+        expected["parent"] = adopted
+        calls.clear()
+        nxt = lineage.step(out, LEARN, BUDGET, Meter(BIG), _rng(seed, 1))
+        assert calls[0] == adopted
+        assert nxt["parent"] == out["digest"]
+        assert lineage.verify_lineage([base, out, nxt]) is True
+    assert retained
+
+
 def test_replace_procedure_restores_the_ancestor_without_touching_the_library():
     states = _run(3)
     ancestral = lineage.replace_procedure(states[3], cp.seed_procedure())
