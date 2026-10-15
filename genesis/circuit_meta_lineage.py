@@ -31,8 +31,13 @@ Stage (b), choices documented here (fixed by this module, not frozen by any prot
 - when the meter runs out, work stops, nothing is exceeded and the record says exhausted=True.
   When stage (a) is exhausted, stage (b) is skipped (the parent's score would be incomplete).
 
-Limits: the baseline engine.attempt on the current library is not metered (that API takes no meter);
-the scale of one unit per synthesis NAND is not frozen; the improvement of the improver is not measured here.
+The baseline evaluation of the current library (stage a, before improved_by) is metered too: it runs
+through engine._metered_attempt under the same meter and its evaluations are counted in the post
+"evaluations". If the meter cannot pay for one full evaluation, the child keeps the library and the
+procedure unchanged, with exhausted=True, adopted=False, score=None and parent_score=None, and
+improved_by is not called; such a state passes verify_state.
+
+Limits: the scale of one unit per synthesis NAND is not frozen; the improvement of the improver is not measured here.
 
 Reloaded states: Engine has no from_record, so a state rebuilt from JSON carries no live library and
 step refuses it with LineageError (it can still be verified). verify_state checks the types and shapes
@@ -261,7 +266,28 @@ def step(state, tasks, task_budget, meter, rng):
     generation = state["index"] + 1
     started = meter.spent
     spent = dict.fromkeys(POSTS, 0)
-    baseline = engine.attempt(current, learn, task_budget)
+    spent_eval = {"evaluations": 0}
+    baseline = engine._metered_attempt(current, learn, task_budget, meter, spent_eval)
+    spent["evaluations"] += spent_eval["evaluations"]
+    if baseline is None:
+        if sum(spent.values()) != meter.spent - started:
+            raise LineageError("the posts do not add up to what the meter was charged")
+        return _seal(
+            {
+                "schema": SCHEMA,
+                "index": generation,
+                "library": current.record(),
+                "procedure": state["procedure"],
+                "parent": state["digest"],
+                "spent": spent,
+                "exhausted": True,
+                "adopted": False,
+                "evaluated": [],
+                "parent_score": None,
+                "score": None,
+            },
+            current,
+        )
     library, after, info = engine.improved_by(current, learn, task_budget, baseline, parent, meter, generation=generation)
     _add(spent, info["spent"])
     exhausted = bool(info["exhausted"])

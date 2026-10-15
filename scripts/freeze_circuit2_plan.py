@@ -7,6 +7,7 @@ l'écraser. verify_plan(path) refuse tout plan altéré.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import subprocess
 import sys
@@ -24,29 +25,52 @@ MACHINERY_FILES = (
 SEEDS = list(range(20))
 RANDOM_PROCEDURE_SEED_OFFSET = 10000
 # Budgets volontairement petits, fixés avant toute mesure.
+# Incertitude non levée, non ajustée dans ce patch: PER_GENERATION_LIMIT=16 est
+# peut-être trop petit pour payer une évaluation de base complète; les
+# générations s'arrêteraient alors immédiatement (exhausted=True). Aucun budget
+# n'est modifié ici; à examiner avant toute campagne.
 PER_GENERATION_LIMIT = 16
 TASK_BUDGET = 32
 MAX_GENERATIONS = 6
 
 # Instances tenues à l'écart de CIRCUIT2: familles propres (préfixe c2h_) et
-# largeurs 5 à 7, définies ici de façon déterministe. Elles sont distinctes de
-# LEARN par construction et leur disjonction avec les tables tenues à l'écart
-# de CIRCUIT1 est vérifiée à la construction du plan (ValueError sinon).
+# largeurs 5 à 7, définies ici de façon déterministe. Le préfixe ne prouve rien:
+# la disjonction est vérifiée sémantiquement à la construction du plan
+# (ValueError sinon), en comparant des tables entières (n_inputs, table):
+# contre les tables de LEARN, à l'identique et après toute permutation des
+# entrées, et contre les tables tenues à l'écart de CIRCUIT1 (comparaison exacte).
 
 
 def _popcount(i: int) -> int:
     return bin(i).count("1")
 
 
+def _weighted_threshold(i: int, n: int) -> int:
+    total = sum(k + 1 for k in range(n) if (i >> k) & 1)
+    return int(2 * total > n * (n + 1) // 2)
+
+
+def _alternating_chain(i: int, n: int) -> int:
+    value = i & 1
+    for k in range(1, n):
+        bit = (i >> k) & 1
+        value = (value & bit) if k % 2 else (value ^ bit)
+    return value
+
+
+def _pair_inner_product(i: int, n: int) -> int:
+    return sum(((i >> (2 * j)) & (i >> (2 * j + 1))) & 1 for j in range(n // 2)) % 2
+
+
+def _transitions(i: int, n: int) -> int:
+    return int(_popcount((i ^ (i >> 1)) & ((1 << (n - 1)) - 1)) >= 3)
+
+
 _GENERATORS = {
-    "c2h_parity": (lambda i, n: _popcount(i) % 2, (5, 6, 7)),
-    "c2h_majority": (lambda i, n: int(2 * _popcount(i) > n), (5, 7)),
-    "c2h_threshold2": (lambda i, n: int(_popcount(i) >= 2), (5, 6)),
-    "c2h_popcount_mod3": (lambda i, n: int(_popcount(i) % 3 == 0), (5, 6)),
-    "c2h_halves_equal": (
-        lambda i, n: int((i >> (n // 2)) == (i & ((1 << (n // 2)) - 1))),
-        (6,),
-    ),
+    "c2h_weighted_threshold": (_weighted_threshold, (5, 6, 7)),
+    "c2h_alternating_chain": (_alternating_chain, (5, 6, 7)),
+    "c2h_pair_inner_product": (_pair_inner_product, (5, 6, 7)),
+    "c2h_transitions": (_transitions, (5, 6, 7)),
 }
 
 
@@ -125,6 +149,32 @@ def circuit1_heldout_tables() -> set:
     return tables
 
 
+def learn_tables() -> set:
+    """Couples (n_inputs, table) de toutes les tâches de circuit_tasks.LEARN."""
+    mod = _tasks()
+    return {
+        (t.inputs, tuple((t.target >> r) & 1 for r in range(1 << t.inputs)))
+        for t in mod.suite(mod.LEARN)
+    }
+
+
+def _permuted_hit(n_inputs: int, rows: tuple, known: set) -> bool:
+    """True si rows, après une permutation des entrées, est une table de known de même largeur."""
+    size = 1 << n_inputs
+    ones = sum(rows)
+    pool = {t for (n, t) in known if n == n_inputs and sum(t) == ones}
+    if not pool:
+        return False
+    for perm in itertools.permutations(range(n_inputs)):
+        image = tuple(
+            rows[sum(((j >> perm[k]) & 1) << k for k in range(n_inputs))]
+            for j in range(size)
+        )
+        if image in pool:
+            return True
+    return False
+
+
 def build_plan(root: Path = ROOT) -> dict:
     inst = instances()
     learn = learn_families()
@@ -134,6 +184,13 @@ def build_plan(root: Path = ROOT) -> dict:
     tables = [tuple(i["rows"]) for i in inst]
     if len(set(tables)) != len(tables):
         raise ValueError("instances tenues à l'écart dupliquées")
+    learn_known = learn_tables()
+    for item in inst:
+        key = (item["n_inputs"], tuple(item["rows"]))
+        if key in learn_known:
+            raise ValueError(f"instance {item['id']} identique à une tâche de LEARN")
+        if _permuted_hit(key[0], key[1], learn_known):
+            raise ValueError(f"instance {item['id']} identique à une tâche de LEARN après permutation des entrées")
     circuit1 = circuit1_heldout_tables()
     if set(tables) & circuit1:
         raise ValueError("instance commune avec les tâches tenues à l'écart de CIRCUIT1")
@@ -173,7 +230,7 @@ def build_plan(root: Path = ROOT) -> dict:
             "heldout_instances": inst,
             "heldout_tables_digest": digest_of([list(t) for t in tables]),
             "circuit1_heldout_tables_digest": digest_of(sorted(list(t) for t in circuit1)),
-            "instances_justification": "familles propres à CIRCUIT2 (préfixe c2h_), largeurs 5 à 7; disjonction avec CIRCUIT1 vérifiée par comparaison des tables et non par les noms",
+            "instances_justification": "familles propres à CIRCUIT2 (préfixe c2h_), largeurs 5 à 7; le préfixe ne prouve rien: disjonction vérifiée sémantiquement par comparaison de tables entières (n_inputs, table) avec LEARN, à l'identique et après permutation des entrées, et avec les tables tenues à l'écart de CIRCUIT1 (comparaison exacte)",
             "criterion": {
                 "unit": "points de rendement (rendement x 100)",
                 "min_gain_final_vs_fixed_points": 10.0,

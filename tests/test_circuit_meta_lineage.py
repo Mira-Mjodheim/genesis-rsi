@@ -117,6 +117,46 @@ def test_the_ceiling_is_exact_and_the_posts_add_up(limit):
         assert sum(generated["spent"].values()) <= limit
 
 
+@pytest.fixture()
+def solve_spy(monkeypatch):
+    real = engine.solve
+    log = {"calls": 0, "evaluations": 0}
+
+    def spy(*args, **kwargs):
+        result = real(*args, **kwargs)
+        log["calls"] += 1
+        log["evaluations"] += result.evaluations
+        return result
+
+    monkeypatch.setattr(engine, "solve", spy)
+    return log
+
+
+def test_a_zero_budget_never_reaches_solve(solve_spy):
+    start = lineage.initial_state()
+    meter = Meter(0)
+    state = lineage.step(start, LEARN, BUDGET, meter, _rng(1))
+    assert solve_spy["calls"] == 0 and solve_spy["evaluations"] == 0
+    assert meter.spent == 0
+    assert state["exhausted"] is True
+    assert state["adopted"] is False
+    assert state["score"] is None and state["parent_score"] is None
+    assert state["library"] == start["library"] and state["procedure"] == start["procedure"]
+    assert sum(state["spent"].values()) == 0
+    assert lineage.verify_lineage([start, state]) is True
+
+
+@pytest.mark.parametrize("limit", [0, 1, 7, 60, 400, BIG])
+def test_the_evaluations_post_is_what_solve_really_returned(solve_spy, limit):
+    start = lineage.initial_state()
+    meter = Meter(limit)
+    state = lineage.step(start, LEARN, BUDGET, meter, _rng(1))
+    assert solve_spy["evaluations"] == state["spent"]["evaluations"]
+    assert meter.spent <= limit
+    assert sum(state["spent"].values()) == meter.spent
+    assert lineage.verify_lineage([start, state]) is True
+
+
 def test_the_inherited_procedure_changes_what_is_evaluated():
     base = lineage.initial_state()
     everything = lineage.replace_procedure(base, _procedure(admit=11))

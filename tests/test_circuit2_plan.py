@@ -1,6 +1,7 @@
 """Tests hors réseau du gel du plan CIRCUIT2 (aucune campagne lancée)."""
 import copy
 import importlib.util
+import itertools
 import json
 import sys
 from pathlib import Path
@@ -190,3 +191,53 @@ def test_preregistered_criterion(frozen):
     assert c["ablation"]["operation"].startswith("replace_procedure")
     assert c["ablation"]["residual_gain_must_be_below_points"] == 5.0
     assert c["otherwise"] == "échec publié"
+
+
+def test_learn_tables_are_whole_tables_of_the_learn_suite():
+    ct = _circuit_tasks()
+    expected = {
+        (t.inputs, tuple((t.target >> r) & 1 for r in range(1 << t.inputs)))
+        for t in ct.suite(ct.LEARN)
+    }
+    assert expected
+    assert fp.learn_tables() == expected
+
+
+def test_plan_instances_semantically_disjoint_from_learn(frozen):
+    _, plan = frozen
+    instances = plan["heldout_instances"]
+    known = fp.learn_tables()
+    assert len(instances) >= 8
+    for item in instances:
+        n, rows = item["n_inputs"], tuple(item["rows"])
+        assert 5 <= n <= 7 and len(rows) == 1 << n
+        assert (n, rows) not in known
+        pool = {t for (m, t) in known if m == n and sum(t) == sum(rows)}
+        if not pool:
+            continue
+        for perm in itertools.permutations(range(n)):
+            image = tuple(
+                rows[sum(((j >> perm[k]) & 1) << k for k in range(n))]
+                for j in range(1 << n)
+            )
+            assert image not in pool, item["id"]
+
+
+def test_renamed_duplicate_of_a_learn_task_is_refused(monkeypatch):
+    parity5 = (lambda i, n: bin(i).count("1") % 2, (5,))
+    assert (5, tuple(parity5[0](i, 5) for i in range(32))) in fp.learn_tables()
+    monkeypatch.setattr(fp, "_GENERATORS", {"c2h_renamed": parity5})
+    with pytest.raises(ValueError, match="LEARN"):
+        fp.build_plan()
+
+
+def test_permuted_duplicate_of_a_learn_task_is_refused(monkeypatch):
+    n, rows = sorted(item for item in fp.learn_tables() if item[0] >= 2)[-1]
+
+    def rotated(i, width):
+        j = ((i << 1) | (i >> (width - 1))) & ((1 << width) - 1)
+        return rows[j]
+
+    monkeypatch.setattr(fp, "_GENERATORS", {"c2h_rotated": (rotated, (n,))})
+    with pytest.raises(ValueError, match="LEARN"):
+        fp.build_plan()
