@@ -66,6 +66,7 @@ def test_real_inventory_witnesses_reproduce_tables():
 
 
 def test_real_inventory_has_no_collision():
+    # Inventaire vide: absence de collision de tables (égalité exacte ou permutation des entrées) seulement, pas indépendance des familles.
     assert diag.inventory() == []
 
 
