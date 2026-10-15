@@ -306,18 +306,28 @@ def test_the_last_link_is_checked_even_when_its_digest_is_consistent():
 
 
 @pytest.mark.parametrize(
-    "build",
+    ("build", "sealed"),
     [
-        lambda states: states[3:],
-        lambda states: [states[1], states[2]],
-        lambda states: [lineage.seal({**states[0], "parent": "0" * 64})],
-        lambda states: [lineage.seal({**states[0], "index": 1})],
+        pytest.param(lambda states: states[3:], False, id="extracted-tail"),
+        pytest.param(lambda states: [states[1], states[2]], False, id="pair-without-root"),
+        pytest.param(
+            lambda states: [lineage.seal({**states[0], "parent": "0" * 64})],
+            True,
+            id="resealed-index-0-with-parent",
+        ),
+        pytest.param(
+            lambda states: [lineage.seal({**states[0], "index": 1})],
+            True,
+            id="resealed-index-1-no-parent",
+        ),
     ],
-    ids=["extracted-tail", "pair-without-root", "resealed-index-0-with-parent", "resealed-index-1-no-parent"],
 )
-def test_a_chain_must_start_at_a_true_root(build):
+def test_a_chain_must_start_at_a_true_root(build, sealed):
     states = _run(4)
+    chain = build(states)
+    if sealed:
+        assert lineage.verify_state(chain[0]) is None
     with pytest.raises(lineage.LineageError, match="first generation must have index 0 and no parent"):
-        lineage.verify_lineage(build(states))
+        lineage.verify_lineage(chain)
     assert lineage.verify_lineage(states) is True
     assert lineage.verify_lineage([states[0]]) is True

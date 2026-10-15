@@ -52,13 +52,6 @@ ENTRY_POINT_PREFIXES = (
     "g11_", "g12_", "select_", "preregister_",
 )
 
-# CIRCUIT2: scripts autonomes lancés en ligne de commande, déclarés par nom de module exact
-# (stem du fichier) et non par préfixe générique, pour qu'un autre diagnose_*/freeze_* orphelin reste signalé.
-ENTRY_POINT_NAMES = (
-    "diagnose_circuit2_collisions",
-    "freeze_circuit2_plan",
-)
-
 # Tools invoked from the command line and never imported by source code. Declaring them
 # without importing them is legitimate.
 # Declared in pyproject but never imported by the project, because they are invoked as
@@ -168,9 +161,7 @@ def check_orphans() -> list[str]:
     roots = [
         name
         for name, path in files.items()
-        if path.parts[-2] == "tests"
-        or name.startswith(ENTRY_POINT_PREFIXES)
-        or name in ENTRY_POINT_NAMES
+        if path.parts[-2] == "tests" or name.startswith(ENTRY_POINT_PREFIXES)
     ]
 
     reachable: set[str] = set()
