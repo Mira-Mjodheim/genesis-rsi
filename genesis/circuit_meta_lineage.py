@@ -176,8 +176,11 @@ def verify_lineage(states):
     for position, state in enumerate(states):
         verify_state(state)
         if position == 0:
-            if state["index"] == 0 and state["parent"] is not None:
-                raise LineageError("the first generation has a parent")
+            if state["index"] != 0 or state["parent"] is not None:
+                raise LineageError(
+                    "the first generation must have index 0 and no parent (it must be a root): "
+                    f"index={state['index']!r}, parent={state['parent']!r}"
+                )
         elif state["index"] != previous["index"] + 1 or state["parent"] != previous["digest"]:
             raise LineageError(f"generation {state['index']} does not descend from its predecessor")
         previous = state
