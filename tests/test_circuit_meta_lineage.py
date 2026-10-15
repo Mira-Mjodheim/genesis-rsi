@@ -305,92 +305,19 @@ def test_the_last_link_is_checked_even_when_its_digest_is_consistent():
         lineage.verify_lineage([*states[:-1], last])
 
 
-def test_a_chain_that_does_not_start_at_the_root_is_refused():
-    states = _run(3)
-    with pytest.raises(lineage.LineageError):
-        lineage.verify_lineage(states[3:])
-    with pytest.raises(lineage.LineageError):
-        lineage.verify_lineage([states[1], states[2]])
-    assert lineage.verify_lineage(states) is True
-
-
-def test_a_first_link_with_index_zero_but_a_parent_is_refused():
-    states = _run(2)
-    forged = lineage.seal({**states[0], "parent": "0" * 64})
-    assert forged["index"] == 0 and forged["parent"] is not None
-    assert lineage.verify_state(forged) is None
-    with pytest.raises(lineage.LineageError):
-        lineage.verify_lineage([forged])
-    with pytest.raises(lineage.LineageError):
-        lineage.verify_lineage([forged, *states[1:]])
-
-
-def test_an_extracted_chain_starting_at_index_three_or_a_resealed_first_link_with_a_parent_is_refused():
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda states: states[3:],
+        lambda states: [states[1], states[2]],
+        lambda states: [lineage.seal({**states[0], "parent": "0" * 64})],
+        lambda states: [lineage.seal({**states[0], "index": 1})],
+    ],
+    ids=["extracted-tail", "pair-without-root", "resealed-index-0-with-parent", "resealed-index-1-no-parent"],
+)
+def test_a_chain_must_start_at_a_true_root(build):
     states = _run(4)
-    tail = states[3:]
-    assert tail[0]["index"] == 3 and tail[0]["parent"] is not None
-    assert lineage.verify_state(tail[0]) is None
-    with pytest.raises(lineage.LineageError):
-        lineage.verify_lineage(tail)
-    forged = lineage.seal({**states[0], "parent": "0" * 64})
-    assert forged["index"] == 0 and forged["parent"] is not None
-    with pytest.raises(lineage.LineageError):
-        lineage.verify_lineage([forged])
-
-
-def test_the_three_invalid_first_links_are_refused_with_an_explicit_message():
-    states = _run(4)
-    forged = lineage.seal({**states[0], "parent": "0" * 64})
-    for chain in (states[3:], [states[1], states[2]], [forged]):
-        with pytest.raises(lineage.LineageError, match="first generation must have index 0 and no parent"):
-            lineage.verify_lineage(chain)
-
-
-def test_a_resealed_first_link_with_a_wrong_index_and_no_parent_is_refused():
-    states = _run(4)
-    for index in (1, 3):
-        forged = lineage.seal({**states[0], "index": index})
-        assert forged["index"] == index and forged["parent"] is None
-        assert lineage.verify_state(forged) is None
-        with pytest.raises(lineage.LineageError, match="first generation must have index 0 and no parent"):
-            lineage.verify_lineage([forged])
-    assert lineage.verify_lineage(states) is True
-
-
-# Refus d'une chaîne qui ne commence pas à une vraie racine.
-def _root_refusal(chain):
-    with pytest.raises(lineage.LineageError, match="root"):
-        lineage.verify_lineage(chain)
-
-
-def test_a_chain_must_start_at_a_true_root():
-    states = _run(3)
-    _root_refusal(states[3:])
-    _root_refusal([states[1], states[2]])
-    forged = lineage.seal({**states[0], "parent": "0" * 64})
-    lineage.verify_state(forged)
-    _root_refusal([forged])
+    with pytest.raises(lineage.LineageError, match="first generation must have index 0 and no parent"):
+        lineage.verify_lineage(build(states))
     assert lineage.verify_lineage(states) is True
     assert lineage.verify_lineage([states[0]]) is True
-
-
-def test_a_resealed_first_link_with_index_one_and_no_parent_is_refused_as_a_root():
-    states = _run(3)
-    bad = lineage.seal({**states[0], "index": 1})
-    assert lineage.verify_state(bad) is None
-    with pytest.raises(lineage.LineageError, match="root"):
-        lineage.verify_lineage([bad])
-
-
-def test_a_resealed_first_link_with_index_zero_and_a_parent_is_refused_as_a_root():
-    states = _run(3)
-    forged = lineage.seal({**states[0], "parent": "0" * 64})
-    assert lineage.verify_state(forged) is None
-    with pytest.raises(lineage.LineageError, match="root"):
-        lineage.verify_lineage([forged])
-
-
-def test_a_valid_root_alone_and_its_full_chain_are_accepted():
-    states = _run(3)
-    assert lineage.verify_lineage([states[0]]) is True
-    assert lineage.verify_lineage(states) is True
