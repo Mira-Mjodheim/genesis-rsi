@@ -173,10 +173,16 @@ def test_witness_arms_declared(frozen):
 def test_budgets_frozen(frozen):
     _, plan = frozen
     b = plan["budget"]
-    assert b["per_generation_limit"] == 16
-    assert b["task_budget"] == 32
-    assert b["max_generations"] == 6
-    assert b["total_budget"] == 16 * 6
+    assert b["per_generation_limit"] == fp.PER_GENERATION_LIMIT
+    assert b["task_budget"] == fp.TASK_BUDGET
+    assert b["max_generations"] == fp.MAX_GENERATIONS
+    assert b["total_budget"] == fp.PER_GENERATION_LIMIT * fp.MAX_GENERATIONS
+    assert b["control_seeds"] == list(fp.CONTROL_SEEDS)
+    assert b["justification"] == fp.BUDGET_JUSTIFICATION != ""
+    assert any((t["per_generation_limit"], t["task_budget"]) == (16, 32) for t in fp.NEGATIVE_TRIALS)
+    assert (fp.PER_GENERATION_LIMIT, fp.TASK_BUDGET) != (16, 32)
+    assert not set(b["control_seeds"]) & set(plan["seeds"])
+    assert not set(b["control_seeds"]) & {int(v) for v in plan["random_procedure_seeds"].values()}
 
 
 def test_preregistered_criterion(frozen):
@@ -241,3 +247,50 @@ def test_permuted_duplicate_of_a_learn_task_is_refused(monkeypatch):
     monkeypatch.setattr(fp, "_GENERATORS", {"c2h_rotated": (rotated, (n,))})
     with pytest.raises(ValueError, match="LEARN"):
         fp.build_plan()
+
+
+def test_lineage_is_not_inert_on_learn_with_proposed_budget():
+    ct = _circuit_tasks()
+    from genesis import circuit_meta_lineage as lineage
+
+    learn = list(ct.suite(ct.LEARN))
+    for seed in fp.CONTROL_SEEDS:
+        states = lineage.run_lineage(2, learn, fp.TASK_BUDGET, fp.PER_GENERATION_LIMIT, seed)
+        assert states[1]["score"] is not None
+        assert states[1]["exhausted"] is False
+        assert any(len(s["evaluated"]) >= 1 for s in states[1:])
+
+
+def test_insufficient_budget_16_32_is_refused(monkeypatch):
+    monkeypatch.setattr(fp, "PER_GENERATION_LIMIT", 16)
+    monkeypatch.setattr(fp, "TASK_BUDGET", 32)
+    with pytest.raises(ValueError, match="preflight"):
+        fp.build_plan()
+
+
+def test_lineage_search_runs_on_learn_with_proposed_budget(monkeypatch):
+    import random
+
+    ct = _circuit_tasks()
+    from genesis import circuit_engine as engine
+    from genesis import circuit_meta_lineage as lineage
+    from genesis.circuit_engine import Meter
+
+    learn = list(ct.suite(ct.LEARN))
+    real = engine.improved_by
+    infos = []
+
+    def spy(*args, **kwargs):
+        result = real(*args, **kwargs)
+        infos.append(result[2])
+        return result
+
+    monkeypatch.setattr(engine, "improved_by", spy)
+    for seed in fp.CONTROL_SEEDS:
+        infos.clear()
+        states = lineage.run_lineage(2, learn, fp.TASK_BUDGET, fp.PER_GENERATION_LIMIT, seed)
+        assert any(s["exhausted"] is False for s in states[1:])
+        assert infos and any(info["trials"] for info in infos)
+    meter = Meter(fp.PER_GENERATION_LIMIT)
+    state = lineage.step(lineage.initial_state(), learn, fp.TASK_BUDGET, meter, random.Random("meta|1|0"))
+    assert state["exhausted"] is False and meter.spent <= fp.PER_GENERATION_LIMIT

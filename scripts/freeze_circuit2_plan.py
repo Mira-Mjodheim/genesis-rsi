@@ -24,14 +24,25 @@ MACHINERY_FILES = (
 )
 SEEDS = list(range(20))
 RANDOM_PROCEDURE_SEED_OFFSET = 10000
-# Budgets volontairement petits, fixés avant toute mesure.
-# Incertitude non levée, non ajustée dans ce patch: PER_GENERATION_LIMIT=16 est
-# peut-être trop petit pour payer une évaluation de base complète; les
-# générations s'arrêteraient alors immédiatement (exhausted=True). Aucun budget
-# n'est modifié ici; à examiner avant toute campagne.
+# Budgets: 16/32 sont insuffisants (engine._metered_attempt renvoie None dès
+# que meter.remaining < task_budget: évaluation initiale incomplète, lignée
+# inerte). Les valeurs ci-dessous restent à remplacer par des valeurs MESURÉES
+# sur LEARN (python scripts/freeze_circuit2_plan.py --measure). Tant qu'elles
+# échouent à preflight_learn_only, build_plan refuse de sceller le plan.
+# ÉTAT: --measure n'a pas été exécuté, aucune sortie n'est consignée; aucune valeur n'est inventée ici.
 PER_GENERATION_LIMIT = 16
 TASK_BUDGET = 32
 MAX_GENERATIONS = 6
+# Graines de contrôle (LEARN seulement), distinctes de SEEDS et des graines aléatoires.
+CONTROL_SEEDS = (9001, 9002, 9003)
+# Justification chiffrée issue de la mesure; vide tant que rien n'est mesuré.
+BUDGET_JUSTIFICATION = ""
+# Essais négatifs consignés. 16/32: hypothèse issue de la lecture du code
+# (_metered_attempt renvoie None si remaining < task_budget), NON mesurée ici.
+NEGATIVE_TRIALS = (
+    {"per_generation_limit": 16, "task_budget": 32, "status": "hypothèse non mesurée: évaluation de base impayable"},
+)
+MEASURE_TASK_BUDGETS = (32, 64, 128, 256)
 
 # Instances tenues à l'écart de CIRCUIT2: familles propres (préfixe c2h_) et
 # largeurs 5 à 7, définies ici de façon déterministe. Le préfixe ne prouve rien:
@@ -175,6 +186,140 @@ def _permuted_hit(n_inputs: int, rows: tuple, known: set) -> bool:
     return False
 
 
+def _learn_tasks() -> list:
+    mod = _tasks()
+    return list(mod.suite(mod.LEARN))
+
+
+def _level1_ok(states: list) -> bool:
+    first = states[1]
+    return (
+        first["score"] is not None
+        and first["exhausted"] is False
+        and len(first["evaluated"]) >= 1
+    )
+
+
+def initial_evaluation_spend(task_budget: int) -> dict:
+    """Dépense réelle de l'évaluation initiale de la bibliothèque vide, LEARN seulement."""
+    _tasks()
+    from genesis import circuit_engine as engine
+
+    solutions = engine.attempt(engine.Engine(), _learn_tasks(), task_budget)
+    return {
+        "task_budget": task_budget,
+        "evaluations": sum(s.evaluations for s in solutions),
+        "solved": sum(1 for s in solutions if s.solved),
+        "tasks": len(solutions),
+    }
+
+
+def _lineage_passes(limit: int, task_budget: int, seeds, generations: int = 2) -> bool:
+    _tasks()
+    from genesis import circuit_meta_lineage as lineage
+
+    learn = _learn_tasks()
+    return all(
+        _level1_ok(lineage.run_lineage(generations, learn, task_budget, limit, seed))
+        for seed in seeds
+    )
+
+
+def minimal_generation_limit(task_budget: int, seeds=CONTROL_SEEDS, ceiling: int = 10**6):
+    """Plus petit plafond par génération qui passe le contrôle de non-inertie (None si aucun).
+
+    Recherche par doublement puis dichotomie; suppose la monotonie en limit,
+    à confirmer en rejouant la valeur trouvée et la valeur juste en dessous.
+    """
+    high = 1
+    while not _lineage_passes(high, task_budget, seeds):
+        high *= 2
+        if high > ceiling:
+            return None
+    low = high // 2
+    while high - low > 1:
+        mid = (low + high) // 2
+        if _lineage_passes(mid, task_budget, seeds):
+            high = mid
+        else:
+            low = mid
+    return high
+
+
+def measure(task_budgets=MEASURE_TASK_BUDGETS, seeds=CONTROL_SEEDS) -> list:
+    """Mesure hors réseau, sans modèle, sur LEARN uniquement."""
+    return [
+        {
+            "initial_evaluation": initial_evaluation_spend(tb),
+            "minimal_per_generation_limit": minimal_generation_limit(tb, seeds),
+            "control_seeds": list(seeds),
+        }
+        for tb in task_budgets
+    ]
+
+
+def preflight_learn_only(per_generation_limit, task_budget, seeds=None) -> list:
+    """Précontrôle sur LEARN seul (jamais les familles tenues à l'écart).
+
+    Rapporte par graine de contrôle: coût de l'évaluation de base, budget restant
+    après elle, appel effectif d'improved_by avec au moins un candidat admis et
+    essayé, consommation totale. ValueError si la recherche ne démarre pas.
+    Ne démontre aucune amélioration: seul CIRCUIT2 adjugé la mesurera.
+    """
+    controls = tuple(CONTROL_SEEDS if seeds is None else seeds)
+    reserved = set(SEEDS) | {RANDOM_PROCEDURE_SEED_OFFSET + s for s in SEEDS}
+    if not controls or set(controls) & reserved:
+        raise ValueError("preflight LEARN: graines de contrôle absentes ou communes avec le plan")
+    _tasks()
+    from genesis import circuit_engine as engine
+    from genesis import circuit_meta_lineage as lineage
+
+    learn = _learn_tasks()
+    base_cost = sum(s.evaluations for s in engine.attempt(engine.Engine(), learn, task_budget))
+    reports = []
+    for seed in controls:
+        calls = []
+        real = engine.improved_by
+
+        def spy(*args, **kwargs):
+            result = real(*args, **kwargs)
+            calls.append(result[2])
+            return result
+
+        engine.improved_by = spy
+        try:
+            states = lineage.run_lineage(1, learn, task_budget, per_generation_limit, seed)
+        finally:
+            engine.improved_by = real
+        state = states[1]
+        tried = sum(len(info.get("trials", [])) for info in calls)
+        admitted = sum(info.get("admitted", 0) for info in calls)
+        report = {
+            "seed": seed,
+            "base_cost": base_cost,
+            "remaining_after_base": per_generation_limit - base_cost,
+            "improved_by_called": bool(calls),
+            "admitted": admitted,
+            "tried": tried,
+            "total_spent": sum(state["spent"].values()),
+            "exhausted": state["exhausted"],
+        }
+        reports.append(report)
+        if state["score"] is None:
+            raise ValueError(
+                f"preflight LEARN: évaluation de base incomplète, limit={per_generation_limit} task_budget={task_budget} {report}"
+            )
+        if not calls or state["exhausted"] is not False:
+            raise ValueError(
+                f"preflight LEARN: recherche non démarrée (improved_by non appelé ou budget épuisé), {report}"
+            )
+        if admitted < 1 or tried < 1:
+            raise ValueError(
+                f"preflight LEARN: aucun candidat admis et essayé, {report}"
+            )
+    return reports
+
+
 def build_plan(root: Path = ROOT) -> dict:
     inst = instances()
     learn = learn_families()
@@ -194,6 +339,9 @@ def build_plan(root: Path = ROOT) -> dict:
     circuit1 = circuit1_heldout_tables()
     if set(tables) & circuit1:
         raise ValueError("instance commune avec les tâches tenues à l'écart de CIRCUIT1")
+    preflight_learn_only(PER_GENERATION_LIMIT, TASK_BUDGET)
+    if not BUDGET_JUSTIFICATION:
+        raise ValueError("preflight LEARN: justification chiffrée du budget absente")
     total = PER_GENERATION_LIMIT * MAX_GENERATIONS
     return seal(
         {
@@ -206,7 +354,9 @@ def build_plan(root: Path = ROOT) -> dict:
                 "task_budget": TASK_BUDGET,
                 "max_generations": MAX_GENERATIONS,
                 "total_budget": total,
-                "note": "identique pour tous les bras; valeurs petites fixées avant toute mesure",
+                "control_seeds": list(CONTROL_SEEDS),
+                "justification": BUDGET_JUSTIFICATION,
+                "note": "identique pour tous les bras; valeurs mesurées sur LEARN uniquement (voir justification)",
             },
             "stop_rules": [
                 "arrêt à max_generations générations",
@@ -284,7 +434,11 @@ def freeze(path=PLAN_PATH, root: Path = ROOT) -> dict:
     return plan
 
 
-def main() -> int:
+def main(argv=None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args == ["--measure"]:
+        print(json.dumps(measure(), indent=2, sort_keys=True))
+        return 0
     plan = freeze()
     print(f"plan gelé: {PLAN_PATH} plan_digest={plan['plan_digest']}")
     return 0
