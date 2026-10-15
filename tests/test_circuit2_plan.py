@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 
 import pytest
 
@@ -117,3 +118,12 @@ def test_a_second_freeze_is_refused(tmp_path):
     with pytest.raises(freeze.PlanError, match="already exists"):
         freeze.freeze(path, measure=fake, machinery_commit=COMMIT)
     assert path.read_text(encoding="utf-8") == written and first["digest"] in written
+
+
+def test_the_plan_path_is_under_experiment_engine_next_to_circuit1():
+    expected = Path("experiment/engine/CIRCUIT2/PLAN.json")
+    assert freeze.PLAN_PATH.relative_to(freeze.ROOT) == expected
+    circuit1 = freeze.ROOT / "experiment" / "engine" / "CIRCUIT1"
+    assert freeze.PLAN_PATH.parent != circuit1
+    assert freeze.PLAN_PATH.parent.parent == circuit1.parent
+    assert not freeze.PLAN_PATH.exists()
