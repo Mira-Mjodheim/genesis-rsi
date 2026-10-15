@@ -50,6 +50,8 @@ ENTRY_POINT_PREFIXES = (
     "run_", "audit_", "author_", "build_", "train_", "check_",
     # Research studies are standalone runnable scripts, not imported APIs.
     "g11_", "g12_", "select_", "preregister_",
+    # CIRCUIT2: inventaire de collisions et gel de plan, scripts autonomes lancés en ligne de commande.
+    "diagnose_", "freeze_",
 )
 
 # Tools invoked from the command line and never imported by source code. Declaring them
