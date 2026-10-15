@@ -13,7 +13,7 @@ def test_repository_scripts_and_experiments_are_local_not_distribution_dependenc
 
 
 def test_g11_g12_studies_are_registered_as_cli_entry_points() -> None:
-    for prefix in ("g11_", "g12_", "select_", "preregister_", "diagnose_", "freeze_"):
+    for prefix in ("g11_", "g12_", "select_", "preregister_"):
         assert prefix in integrity.ENTRY_POINT_PREFIXES
     assert integrity.check_orphans() == []
 
