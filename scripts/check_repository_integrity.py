@@ -50,8 +50,13 @@ ENTRY_POINT_PREFIXES = (
     "run_", "audit_", "author_", "build_", "train_", "check_",
     # Research studies are standalone runnable scripts, not imported APIs.
     "g11_", "g12_", "select_", "preregister_",
-    # CIRCUIT2: inventaire de collisions et gel de plan, scripts autonomes lancés en ligne de commande.
-    "diagnose_", "freeze_",
+)
+
+# CIRCUIT2: scripts autonomes lancés en ligne de commande, déclarés par nom de module exact
+# (stem du fichier) et non par préfixe générique, pour qu'un autre diagnose_*/freeze_* orphelin reste signalé.
+ENTRY_POINT_NAMES = (
+    "diagnose_circuit2_collisions",
+    "freeze_circuit2_plan",
 )
 
 # Tools invoked from the command line and never imported by source code. Declaring them
@@ -163,7 +168,9 @@ def check_orphans() -> list[str]:
     roots = [
         name
         for name, path in files.items()
-        if path.parts[-2] == "tests" or name.startswith(ENTRY_POINT_PREFIXES)
+        if path.parts[-2] == "tests"
+        or name.startswith(ENTRY_POINT_PREFIXES)
+        or name in ENTRY_POINT_NAMES
     ]
 
     reachable: set[str] = set()
