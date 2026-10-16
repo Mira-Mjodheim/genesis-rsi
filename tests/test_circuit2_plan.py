@@ -131,7 +131,7 @@ def test_the_plan_path_is_under_experiment_engine_next_to_circuit1():
     assert not freeze.PLAN_PATH.exists()
 
 
-# Digest of the default suite(LEARN + HELD_OUT), pinned from base be355c7;
+# Digest of the default suite(LEARN + HELD_OUT), pinned from the CIRCUIT1 base suite;
 # it must never be recomputed from the modified code.
 CIRCUIT1_SUITE_DIGEST = "fd8167e8b55a514dc6439c674e0c503d5a757052500d76f23b27f3889598c4fe"
 FAMILIES = (*tasks.LEARN, *tasks.HELD_OUT)
@@ -161,21 +161,6 @@ def test_circuit2_generation_is_reproducible():
 
 
 def test_circuit1_default_suite_is_unchanged():
-    if not CIRCUIT1_SUITE_DIGEST:
-        import subprocess
-
-        root = Path(__file__).resolve().parents[1]
-        base_commit = "be355c76c8736e8649e127a6c4a0f0b7768c078c"
-        try:
-            done = subprocess.run(
-                ["git", "show", f"{base_commit}:genesis/circuit_tasks.py"],
-                cwd=root, capture_output=True, text=True, check=True,
-            )
-        except (OSError, subprocess.CalledProcessError) as exc:
-            pytest.fail(f"CIRCUIT1_SUITE_DIGEST non épinglé ; source de base be355c7 inaccessible : {exc}")
-        base = {"__name__": "circuit_tasks_base"}
-        exec(compile(done.stdout, "be355c7:genesis/circuit_tasks.py", "exec"), base)
-        pytest.fail(f"CIRCUIT1_SUITE_DIGEST non épinglé ; digest de base be355c7 = {_digest(base['suite'](FAMILIES))}")
     assert _digest(tasks.suite(FAMILIES)) == CIRCUIT1_SUITE_DIGEST
 
 
