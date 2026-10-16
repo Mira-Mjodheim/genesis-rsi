@@ -63,3 +63,40 @@ def tasks(family: str, seed: int = 0) -> list[Task]:
 
 def suite(families, seed: int = 0) -> list[Task]:
     return [task for family in families for task in tasks(family, seed)]
+
+
+CIRCUIT2_ATTEMPTS = 64
+CIRCUIT2_MAX_INPUTS = 6
+
+
+def _transform(inputs: int, target: int, order, negate: bool) -> int:
+    table = 0
+    for row in range(1 << inputs):
+        source = sum(((row >> order[index]) & 1) << index for index in range(inputs))
+        table |= (((target >> source) & 1) ^ int(negate)) << row
+    return table
+
+
+def circuit2_tasks(family: str, seed: int = 0) -> list[Task]:
+    """CIRCUIT2 instances: input permutation and/or output negation of each CIRCUIT1 task, kept only if the canonical (arity, table) is new for the family."""
+    base = [t for t in tasks(family, seed) if t.inputs <= CIRCUIT2_MAX_INPUTS]
+    known = {(t.inputs, t.target) for t in base}
+    chosen: set[tuple[int, int]] = set()
+    made: list[Task] = []
+    for task in base:
+        rng = random.Random(f"circuit2|{family}|{task.name}")
+        for _ in range(CIRCUIT2_ATTEMPTS):
+            order = list(range(task.inputs))
+            rng.shuffle(order)
+            table = _transform(task.inputs, task.target, order, rng.random() < 0.5)
+            key = (task.inputs, table)
+            if key in known or key in chosen:
+                continue
+            chosen.add(key)
+            made.append(Task(f"c2_{task.name}", family, task.inputs, table))
+            break
+    return made
+
+
+def circuit2_suite(families, seed: int = 0) -> list[Task]:
+    return [task for family in families for task in circuit2_tasks(family, seed)]
