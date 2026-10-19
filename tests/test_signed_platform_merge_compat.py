@@ -46,7 +46,7 @@ def verify(row, event, metadata, base, head, *, trusted=None):
 
 def test_signature_only_exempts_exact_platform_committer():
     row, event, metadata, base, head = case()
-    assert audit_commit_records([row]) == [head + ": committer is not Anthony or Mira"]
+    assert audit_commit_records([row]) == [head + ": committer is not Anthony, Mira or Leona"]
     assert verify(row, event, metadata, base, head)
     assert audit_commit_records(
         [row], verified_platform_commits=frozenset({head})
