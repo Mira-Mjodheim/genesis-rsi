@@ -65,3 +65,26 @@ def test_suites_are_non_empty_and_learn_families_keep_a_task(seed):
     assert tasks.circuit2_suite(ALL, seed) and tasks.circuit2_suite(tasks.LEARN, seed)
     for family in tasks.LEARN:
         assert tasks.circuit2_tasks(family, seed), family
+
+
+def _fingerprint(items):
+    return tuple((t.inputs, t.target) for t in items)
+
+
+def test_each_seed_draws_its_own_held_out_and_learn_instances():
+    # CIRCUIT2 review P1: the seed must change the instances, otherwise 20 seeds are 20 copies.
+    for families in (tasks.HELD_OUT, tasks.LEARN):
+        prints = {_fingerprint(tasks.circuit2_suite(families, seed)) for seed in range(20)}
+        assert len(prints) == 20
+
+
+def test_generation_is_identical_in_a_fresh_interpreter():
+    import json
+    import subprocess
+    import sys
+    code = ("import json; from genesis import circuit_tasks as t; "
+            "print(json.dumps([[x.name, x.inputs, x.target] for x in t.circuit2_suite(t.HELD_OUT + t.LEARN, 5)]))")
+    runs = [subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
+            for _ in range(2)]
+    here = [[x.name, x.inputs, x.target] for x in tasks.circuit2_suite(tasks.HELD_OUT + tasks.LEARN, 5)]
+    assert json.loads(runs[0]) == json.loads(runs[1]) == here
