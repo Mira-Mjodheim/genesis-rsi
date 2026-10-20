@@ -59,6 +59,9 @@ SCHEMA = "genesis-circuit-meta-lineage-v1"
 POSTS = ("procedure", "synthesis", "evaluations")
 LOT = 16
 SUPPORT_CAP = 8
+# Half of what remains after the baseline evaluation is reserved for stage (b): without it,
+# stage (a) spent the whole generation and the procedure was never selected (CIRCUIT2 dev, 20/10).
+META_RESERVE_DIVISOR = 2
 FIELDS = frozenset(
     ("schema", "index", "library", "procedure", "parent", "digest", "spent", "exhausted", "adopted", "evaluated", "parent_score", "score")
 )
@@ -228,6 +231,26 @@ def _traits(size, count, composed):
     return cp.traits_of(min(count, SUPPORT_CAP), arity, nands, composed)
 
 
+def _outcomes(info, before):
+    """(traits, useful) for every component stage (a) tried: useful = it improved the engine on
+    the learning tasks, (solved, -evaluations) strictly better than before the step."""
+    return [(cp.traits_of(trial["support"], trial["arity"], trial["nands"], trial["composed"]),
+             (trial["solved"], -trial["evaluations"]) > (before[0], -before[1]))
+            for trial in info.get("trials", [])]
+
+
+def _evidence_support(candidate, outcomes, meter, spent):
+    """Right calls the candidate procedure would have made on what stage (a) observed: admitting a
+    useful component or rejecting a useless one each counts one. None when the meter cannot pay."""
+    count = 0
+    for traits, useful in outcomes:
+        if not meter.charge(len(candidate.steps)):
+            return None
+        spent["procedure"] += len(candidate.steps)
+        count += cp.run(candidate, traits)[1] == useful
+    return count
+
+
 def _add(spent, charged):
     for post in POSTS:
         spent[post] += charged.get(post, 0)
@@ -291,36 +314,41 @@ def step(state, tasks, task_budget, meter, rng):
             },
             current,
         )
-    library, after, info = engine.improved_by(current, learn, task_budget, baseline, parent, meter, generation=generation)
+    reserve = meter.remaining // META_RESERVE_DIVISOR
+    library, after, info = engine.improved_by(current, learn, task_budget, baseline, parent,
+                                              _Share(meter, meter.remaining - reserve), generation=generation)
     _add(spent, info["spent"])
     exhausted = bool(info["exhausted"])
     parent_score = _score(after)
     chosen, chosen_score, evaluated = parent, parent_score, []
-    if not exhausted:
-        lot = _lot(parent, state["procedure"]["procedure_digest"], rng)
-        admitted = []
-        for digest, (candidate, composed, draws) in lot.items():
-            if not meter.charge(len(parent.steps)):
-                exhausted = True
-                break
-            spent["procedure"] += len(parent.steps)
-            priority, admit, _ = cp.run(parent, _traits(len(candidate.steps), draws, composed))
-            if admit:
-                admitted.append((priority, digest, candidate))
-        admitted.sort(key=lambda item: -item[0])
-        shortlist = admitted[: engine.SEED_PROCEDURE["tried"]]
-        for position, (_, digest, candidate) in enumerate(shortlist):
-            if meter.remaining <= 0:
-                exhausted = True
-                break
-            share = _Share(meter, meter.remaining // (len(shortlist) - position))
-            _, got, trial = engine.improved_by(current, learn, task_budget, baseline, candidate, share, generation=generation)
-            _add(spent, trial["spent"])
-            evaluated.append(digest)
-            if trial["exhausted"]:
-                exhausted = True
-            elif _score(got) > chosen_score:
-                chosen, chosen_score = candidate, _score(got)
+    outcomes = _outcomes(info, engine.measure(baseline))
+    lot = _lot(parent, state["procedure"]["procedure_digest"], rng)
+    admitted = []
+    for digest, (candidate, composed, draws) in lot.items():
+        # Support of a candidate procedure = its right calls on the observed components (evidence),
+        # not the number of identical draws, which was almost always 1 (nothing admitted).
+        support = _evidence_support(candidate, outcomes, meter, spent)
+        if support is None or not meter.charge(len(parent.steps)):
+            exhausted = True
+            break
+        spent["procedure"] += len(parent.steps)
+        priority, admit, _ = cp.run(parent, _traits(len(candidate.steps), support, composed))
+        if admit:
+            admitted.append((priority, digest, candidate))
+    admitted.sort(key=lambda item: -item[0])
+    shortlist = admitted[: engine.SEED_PROCEDURE["tried"]]
+    for position, (_, digest, candidate) in enumerate(shortlist):
+        if meter.remaining <= 0:
+            exhausted = True
+            break
+        share = _Share(meter, meter.remaining // (len(shortlist) - position))
+        _, got, trial = engine.improved_by(current, learn, task_budget, baseline, candidate, share, generation=generation)
+        _add(spent, trial["spent"])
+        evaluated.append(digest)
+        if trial["exhausted"]:
+            exhausted = True
+        elif _score(got) > chosen_score:
+            chosen, chosen_score = candidate, _score(got)
     if sum(spent.values()) != meter.spent - started:
         raise LineageError("the posts do not add up to what the meter was charged")
     return _seal(
