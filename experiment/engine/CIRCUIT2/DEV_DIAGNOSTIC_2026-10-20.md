@@ -19,7 +19,7 @@ Après correction, des procédures candidates sont bien évaluées (2 à 6 par g
 
 ## 2. Constat bloquant : le premier niveau n'a pas de marge
 
-`scripts/circuit2_leverage_probe.py` fait tourner six générations avec la procédure initiale puis
+`scripts/run_circuit2_leverage_probe.py` fait tourner six générations avec la procédure initiale puis
 avec dix procédures mutées, et compte les tâches réservées résolues (sur 37).
 
 | Tâches d'apprentissage | Budget par tâche | Essais par génération | Bibliothèque finale | Procédure initiale | Procédures mutées |
