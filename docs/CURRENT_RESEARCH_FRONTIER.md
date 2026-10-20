@@ -2,6 +2,17 @@
 
 **Reader-facing status snapshot — 8 October 2026. The active Genesis v2 frontier is blind repair transfer after the bounded G10 chain. General RSI remains unestablished. The historical finite operational L9 gate is passed; L10 independent replication remains open.**
 
+## Update — 20 October 2026: second-order improvement of a repair learner
+
+CIRCUIT2 was found to have no leverage before any freeze (see
+[`CIRCUIT2 diagnostic`](../experiment/engine/CIRCUIT2/DEV_DIAGNOSTIC_2026-10-20.md)). The
+second-order question was moved to a no-model repair learner: a learning procedure selected on
+training data beat a fixed one on held-out student programs (REPAIR2, 19/20 seeds) and the result
+replicated on 257 fresh programs (REPAIR3, 19 wins, 0 losses). Selecting the selector (third
+level) and transfer across exercises were not established. Results only, implementation private:
+[`REPAIR_SECOND_ORDER_RESULTS_2026-10-20.md`](research/REPAIR_SECOND_ORDER_RESULTS_2026-10-20.md).
+General RSI remains unestablished.
+
 ## Active Genesis v2 frontier — blind repair transfer
 
 The strengthened, project-defined G10 chain passed on 7 October in a bounded,
