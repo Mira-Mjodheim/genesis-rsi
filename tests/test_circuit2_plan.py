@@ -123,12 +123,13 @@ def test_a_second_freeze_is_refused(tmp_path):
 
 
 def test_the_plan_path_is_under_experiment_engine_next_to_circuit1():
-    expected = Path("experiment/engine/CIRCUIT2/PLAN.json")
+    expected = Path("experiment/engine/CIRCUIT2/PROCEDURE_PREREG_PLAN.json")
     assert freeze.PLAN_PATH.relative_to(freeze.ROOT) == expected
     circuit1 = freeze.ROOT / "experiment" / "engine" / "CIRCUIT1"
     assert freeze.PLAN_PATH.parent != circuit1
     assert freeze.PLAN_PATH.parent.parent == circuit1.parent
     assert not freeze.PLAN_PATH.exists()
+    assert (freeze.PLAN_PATH.parent / "PLAN.json").is_file()
 
 
 # Digest of the default suite(LEARN + HELD_OUT), pinned from the CIRCUIT1 base suite;
@@ -179,6 +180,8 @@ def test_the_plan_is_built_on_circuit2_instances_and_not_written(plan, monkeypat
         return real(machine, learn, *args)
 
     monkeypatch.setattr(freeze.engine, "_metered_attempt", spy)
+    original_plan = (freeze.PLAN_PATH.parent / "PLAN.json").read_bytes()
     freeze.measure_base_costs(seeds=(0,))
     assert seen == [expected]
     assert not freeze.PLAN_PATH.exists()
+    assert (freeze.PLAN_PATH.parent / "PLAN.json").read_bytes() == original_plan

@@ -22,7 +22,7 @@ from genesis import circuit_procedure as cp  # noqa: E402
 from genesis import circuit_tasks as tasks  # noqa: E402
 from genesis.trust_root import digest_of  # noqa: E402
 
-PLAN_PATH = ROOT / "experiment" / "engine" / "CIRCUIT2" / "PLAN.json"
+PLAN_PATH = ROOT / "experiment" / "engine" / "CIRCUIT2" / "PROCEDURE_PREREG_PLAN.json"
 SCHEMA = "circuit2-plan-v1"
 SEEDS = tuple(range(20))
 SEED_LABEL = "circuit2|{seed}"
