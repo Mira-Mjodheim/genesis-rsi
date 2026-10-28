@@ -137,12 +137,49 @@ def test_score_recorded_per_generation(tasks):
         for g in runs[0]["generations"]:
             if g["score"] is None:
                 assert g["exhausted"] is True
-                assert g["spent"] == 0
-                assert sum(g["spend"].values()) == 0
+                assert sum(g["spend"].values()) == g["spent"]
             else:
                 assert isinstance(g["score"], list) and len(g["score"]) == 2
                 assert all(isinstance(x, int) for x in g["score"])
 
+
+def test_inherited_score_is_the_transmitted_librarys_score(tasks, monkeypatch):
+    def fake_step(state, tasks, task_budget, meter, rng):
+        body = {key: copy.deepcopy(value)
+                for key, value in state.items() if key != "digest"}
+        body["index"] += 1
+        body["parent_score"] = [1, -5]
+        body["score"] = [2, -3]
+        body["spent"] = {post: 0 for post in arms.POSTS}
+        body["exhausted"] = False
+        return arms.lineage._seal(body, state.engine)
+
+    monkeypatch.setattr(arms.lineage, "step", fake_step)
+    result = _run(tasks, BIG, 2, (0,))["arms"]
+    for g in result["inherited_lineage"][0]["generations"]:
+        assert g["score"] == [1, -5]
+        assert g["selection_score"] == [2, -3]
+    for arm in arms.ARMS:
+        if arm != "inherited_lineage":
+            for g in result[arm][0]["generations"]:
+                assert g["selection_score"] is None
+
+@pytest.mark.parametrize("arm", arms.ARMS)
+def test_interrupted_baseline_keeps_its_paid_spend(tasks, monkeypatch, arm):
+    def fake_attempt(engine, tasks, task_budget, meter, spent):
+        meter.charge(7)
+        spent["evaluations"] += 7
+        return None
+
+    monkeypatch.setattr(ce, "_metered_attempt", fake_attempt)
+    result = arms.run_arm(arm, 0, tasks, 2, 100, TASK_BUDGET)
+    assert len(result["generations"]) == 2
+    for g in result["generations"]:
+        assert g["score"] is None
+        assert g["exhausted"] is True
+        assert g["spent"] == 7
+        assert g["spend"]["evaluations"] == 7
+        assert sum(g["spend"].values()) == g["spent"]
 
 def _projection(run):
     return [

@@ -17,6 +17,8 @@ Les interfaces des modules genesis.circuit_* sont appelées directement, sans
 introspection : empreintes par genesis.trust_root.digest_of, dépense et
 drapeau « exhausted » lus dans l'état ou l'information renvoyés par les
 modules. « exhausted » reste enregistré même si la baseline n'est pas payée.
+Le champ « score » est celui de la bibliothèque transmise ; « selection_score »
+est celui de la procédure candidate pour inherited_lineage, sinon None.
 Aucune exception n'est levée pour un budget épuisé ; seule une comptabilité
 incohérente est refusée. Validation technique seulement : aucune preuve de
 progrès RSI.
@@ -146,11 +148,13 @@ def run_arm(arm, seed, tasks, generations, per_generation_limit, task_budget,
             state = lineage.step(state, tasks, task_budget, meter,
                                  random.Random(f"meta|{seed}|{index}"))
             spend, exhausted = state["spent"], state["exhausted"]
-            score = None if state["score"] is None else list(state["score"])
+            score = None if state["parent_score"] is None else list(state["parent_score"])
+            selection_score = None if state["score"] is None else list(state["score"])
         else:
             engine, spend, exhausted, solutions = _generation(
                 arm, engine, procedure, tasks, task_budget, meter, index)
             score = _score(solutions)
+            selection_score = None
         spend = {post: spend[post] for post in sorted(spend)}
         _check(spend, meter, per_generation_limit)
         out_lib, out_proc = _view(engine, procedure, state)
@@ -165,6 +169,7 @@ def run_arm(arm, seed, tasks, generations, per_generation_limit, task_budget,
             "limit": per_generation_limit,
             "exhausted": bool(exhausted),
             "score": score,
+            "selection_score": selection_score,
             "transmission": {
                 "library_digest": out_lib,
                 "procedure_digest": out_proc,
