@@ -96,7 +96,11 @@ def _arms() -> list:
     fixed = cp.to_record(cp.seed_procedure())["procedure_digest"]
     return [
         {"name": "inherited_lineage", "procedure": "inherited and selected across generations"},
-        {"name": "frozen_engine", "procedure": "initial procedure kept, no procedure selection"},
+        {
+            "name": "frozen_engine",
+            "procedure": "initial library Engine() never improved; baseline evaluation only, no improvement procedure run",
+            "decision": "frozen_engine interpretation settled before freeze, under standing delegation of 2026-10-28",
+        },
         {"name": "fixed_procedure", "procedure": "CIRCUIT1 SEED_PROCEDURE", "procedure_digest": fixed},
         {"name": "random_procedure", "procedure": "circuit_procedure.random_procedure"},
     ]
