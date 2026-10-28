@@ -1,0 +1,160 @@
+{
+  "arms": [
+    {
+      "name": "inherited_lineage",
+      "procedure": "inherited and selected across generations"
+    },
+    {
+      "decision": "frozen_engine interpretation settled before freeze, under standing delegation of 2026-10-28",
+      "name": "frozen_engine",
+      "procedure": "initial library Engine() never improved; baseline evaluation only, no improvement procedure run"
+    },
+    {
+      "name": "fixed_procedure",
+      "procedure": "CIRCUIT1 SEED_PROCEDURE",
+      "procedure_digest": "4cec6b3148696c7e39cd61407070f1375309ad5b6e5d091387a6bc8208776b0d"
+    },
+    {
+      "name": "random_procedure",
+      "procedure": "circuit_procedure.random_procedure"
+    }
+  ],
+  "budget_justification": {
+    "learn_task_count": 10,
+    "limit_multiplier": 8,
+    "max_measured_base_cost": 137,
+    "measured_base_cost_by_seed": {
+      "0": 137,
+      "1": 137,
+      "10": 137,
+      "11": 137,
+      "12": 137,
+      "13": 137,
+      "14": 137,
+      "15": 137,
+      "16": 137,
+      "17": 137,
+      "18": 137,
+      "19": 137,
+      "2": 137,
+      "3": 137,
+      "4": 137,
+      "5": 137,
+      "6": 137,
+      "7": 137,
+      "8": 137,
+      "9": 137
+    },
+    "measured_on": "LEARN tasks only, offline, Engine() with a large Meter",
+    "per_generation_limit": 1096,
+    "rule": "per_generation_limit = limit_multiplier * max_measured_base_cost",
+    "superseded": "PER_GENERATION_LIMIT=16 / TASK_BUDGET=32: base evaluation measured at 1560, plan could not be sealed",
+    "task_budget": 16
+  },
+  "budgets": {
+    "generations": 6,
+    "identical_for_all_arms": true,
+    "per_generation_limit": 1096,
+    "task_budget": 16,
+    "total_per_arm": 6576
+  },
+  "criterion": {
+    "text": "succ\u00e8s seulement si la proc\u00e9dure finale gagne au moins 10 points de rendement contre la proc\u00e9dure fixe et contre l'al\u00e9atoire ; si deux transitions successives de proc\u00e9dure gagnent chacune au moins 5 points \u00e0 biblioth\u00e8que initiale identique ; si chacune de ces comparaisons gagne dans au moins 16 graines sur 20 ; et si le gain dispara\u00eet sous ablation (proc\u00e9dure initiale restaur\u00e9e). Sinon \u00e9chec publi\u00e9. Aucun crit\u00e8re n'est modifiable apr\u00e8s gel.",
+    "thresholds": {
+      "ablation": "initial procedure restored, gain must disappear",
+      "final_vs_fixed_points": 10,
+      "final_vs_random_points": 10,
+      "min_seeds_won": 16,
+      "of_seeds": 20,
+      "successive_transitions": 2,
+      "transition_points": 5
+    }
+  },
+  "digest": "d6ddfbe570364b0c8df9c46ae979547a61bda327a77ba3a1363a8e3493ac1ad4",
+  "machinery_commit": "245661e0c8d0f2668f74a3f637f22141cae46fd1",
+  "machinery_digests": {
+    "genesis/circuit_engine.py": "9bbe22eff4065df23f9725d27c0459795b848c7d95a5a81b89185ffd1d2bd6ae",
+    "genesis/circuit_meta_lineage.py": "d8f25a70e0ce12571bcba756abf245295daba986d22c20c323f9b1a0a09d2d84",
+    "genesis/circuit_procedure.py": "707bedea914d00898a8a38a9e5bd9aa6a3f18a6c69675b632496d8aa93823805",
+    "genesis/circuit_tasks.py": "edb042c35995ed1e68473513cf22ce1d24ff1bab9a214c92f278dac6fd8131c6",
+    "scripts/freeze_circuit2_plan.py": "3f8b6a7632f217941b5c952f8e2914971c0299846e6f5b259437a1dc0fff2321",
+    "scripts/run_circuit2_arms.py": "eb017408c2151785fa9b7c5a18ded6f46263c982bb0383897b697ce4641875ff"
+  },
+  "metric": {
+    "definition": "number of held-out tasks solved, reported per seed",
+    "held_out_families": [
+      "exactly",
+      "less",
+      "multiply",
+      "popcount",
+      "subtract"
+    ],
+    "name": "rendement"
+  },
+  "schema": "circuit2-plan-v1",
+  "seed_labels": [
+    "circuit2|0",
+    "circuit2|1",
+    "circuit2|2",
+    "circuit2|3",
+    "circuit2|4",
+    "circuit2|5",
+    "circuit2|6",
+    "circuit2|7",
+    "circuit2|8",
+    "circuit2|9",
+    "circuit2|10",
+    "circuit2|11",
+    "circuit2|12",
+    "circuit2|13",
+    "circuit2|14",
+    "circuit2|15",
+    "circuit2|16",
+    "circuit2|17",
+    "circuit2|18",
+    "circuit2|19"
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19
+  ],
+  "selection": {
+    "families": [
+      "adder",
+      "and",
+      "equal",
+      "majority",
+      "mux",
+      "or",
+      "parity"
+    ],
+    "held_out_reads": 0,
+    "instance_seeds": "circuit2|... (distinct from CIRCUIT1)",
+    "max_inputs": 3
+  },
+  "stop_rule": {
+    "max_generations": 6,
+    "stop_when": [
+      "generation limit reached",
+      "generation exhausted without adoption"
+    ]
+  }
+}

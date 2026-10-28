@@ -5,6 +5,7 @@ import ast
 import copy
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -129,9 +130,42 @@ def test_the_plan_path_is_under_experiment_engine_next_to_circuit1():
     circuit1 = freeze.ROOT / "experiment" / "engine" / "CIRCUIT1"
     assert freeze.PLAN_PATH.parent != circuit1
     assert freeze.PLAN_PATH.parent.parent == circuit1.parent
-    assert not freeze.PLAN_PATH.exists()
     assert (freeze.PLAN_PATH.parent / "PLAN.json").is_file()
 
+
+def test_the_frozen_plan_verifies_and_records_an_ancestor_of_head():
+    frozen = json.loads(freeze.PLAN_PATH.read_text(encoding="utf-8"))
+    freeze.verify_plan(frozen)
+    assert frozen["seeds"] == list(range(20))
+    assert [a["name"] for a in frozen["arms"]] == [
+        "inherited_lineage",
+        "frozen_engine",
+        "fixed_procedure",
+        "random_procedure",
+    ]
+    assert frozen["criterion"]["text"] == LITERAL
+    assert frozen["selection"]["held_out_reads"] == 0
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", frozen["machinery_commit"], "HEAD"],
+        cwd=freeze.ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+def test_a_single_altered_byte_of_the_frozen_file_is_refused(tmp_path):
+    original = freeze.PLAN_PATH.read_bytes()
+    frozen = json.loads(original)
+    digest = frozen["digest"].encode("ascii")
+    offset = original.index(digest)
+    replacement = b"0" if original[offset:offset + 1] != b"0" else b"1"
+    altered = original[:offset] + replacement + original[offset + 1:]
+    assert sum(a != b for a, b in zip(original, altered)) == 1
+    path = tmp_path / "PROCEDURE_PREREG_PLAN.json"
+    path.write_bytes(altered)
+    with pytest.raises(freeze.PlanError):
+        freeze.verify_plan(json.loads(path.read_text(encoding="utf-8")))
 
 # Digest of the default suite(LEARN + HELD_OUT), pinned from the CIRCUIT1 base suite;
 # it must never be recomputed from the modified code.
@@ -184,7 +218,6 @@ def test_the_plan_is_built_on_circuit2_instances_and_not_written(plan, monkeypat
     original_plan = (freeze.PLAN_PATH.parent / "PLAN.json").read_bytes()
     freeze.measure_base_costs(seeds=(0,))
     assert seen == [expected]
-    assert not freeze.PLAN_PATH.exists()
     assert (freeze.PLAN_PATH.parent / "PLAN.json").read_bytes() == original_plan
 
 
