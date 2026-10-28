@@ -36,6 +36,7 @@ MACHINERY_FILES = (
     "genesis/circuit_procedure.py",
     "genesis/circuit_meta_lineage.py",
     "genesis/circuit_tasks.py",
+    "scripts/run_circuit2_arms.py",
     "scripts/freeze_circuit2_plan.py",
 )
 CRITERION = (

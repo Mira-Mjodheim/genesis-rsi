@@ -197,3 +197,22 @@ def test_frozen_engine_interpretation_is_settled_before_freeze(plan):
     source = (freeze.ROOT / "scripts" / "run_circuit2_arms.py").read_text(encoding="utf-8")
     doc = ast.get_docstring(ast.parse(source))
     assert doc is not None and "NON figée" not in doc and "frozen_engine" in doc
+
+
+def test_the_runner_is_part_of_the_frozen_machinery(plan, tmp_path):
+    runner = "scripts/run_circuit2_arms.py"
+    assert runner in freeze.MACHINERY_FILES
+    assert runner in plan["machinery_digests"]
+    for name in freeze.MACHINERY_FILES:
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((freeze.ROOT / name).read_bytes())
+    original = freeze.file_digests(tmp_path)
+    assert original == plan["machinery_digests"]
+    copied = tmp_path / runner
+    copied.write_bytes(copied.read_bytes() + b"\n# modification de test sur la copie temporaire\n")
+    changed = freeze.file_digests(tmp_path)
+    assert changed[runner] != original[runner]
+    assert {k: v for k, v in changed.items() if k != runner} == {k: v for k, v in original.items() if k != runner}
+    with pytest.raises(freeze.PlanError, match="machinery digests differ"):
+        freeze.verify_plan(plan, root=tmp_path, current_digests=freeze.file_digests(tmp_path))
