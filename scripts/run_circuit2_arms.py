@@ -8,10 +8,9 @@ Les quatre bras partagent les mêmes tâches, la même bibliothèque initiale
 Engine(), les mêmes graines et un Meter(per_generation_limit) neuf par
 génération ; chaque bras possède son propre état (aucun objet partagé).
 
-Point à trancher avant gel : le plan dit « initial procedure kept, no procedure
-selection » pour frozen_engine, ce qui ressemble à fixed_procedure. Par
-interprétation provisoire (NON figée), frozen_engine est ici une bibliothèque
-jamais améliorée, évaluée seulement (baseline).
+Interprétation tranchée avant gel et alignée sur le plan : frozen_engine est la
+bibliothèque initiale Engine() jamais améliorée, évaluée seulement (baseline),
+sans procédure d'amélioration ; elle se distingue de fixed_procedure.
 
 Les interfaces des modules genesis.circuit_* sont appelées directement, sans
 introspection : empreintes par genesis.trust_root.digest_of, dépense et

@@ -1,6 +1,7 @@
 """Offline checks of the CIRCUIT2 freeze script: build, seal, tamper, refuse a second freeze."""
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import json
@@ -185,3 +186,14 @@ def test_the_plan_is_built_on_circuit2_instances_and_not_written(plan, monkeypat
     assert seen == [expected]
     assert not freeze.PLAN_PATH.exists()
     assert (freeze.PLAN_PATH.parent / "PLAN.json").read_bytes() == original_plan
+
+
+def test_frozen_engine_interpretation_is_settled_before_freeze(plan):
+    arm = next(a for a in plan["arms"] if a["name"] == "frozen_engine")
+    assert arm["procedure"] == "initial library Engine() never improved; baseline evaluation only, no improvement procedure run"
+    assert arm["decision"] == "frozen_engine interpretation settled before freeze, under standing delegation of 2026-10-28"
+    assert "procedure kept" not in json.dumps(arm)
+    assert [a["name"] for a in plan["arms"]] == ["inherited_lineage", "frozen_engine", "fixed_procedure", "random_procedure"]
+    source = (freeze.ROOT / "scripts" / "run_circuit2_arms.py").read_text(encoding="utf-8")
+    doc = ast.get_docstring(ast.parse(source))
+    assert doc is not None and "NON figée" not in doc and "frozen_engine" in doc
