@@ -7,29 +7,26 @@ Rattachement au plan canonique : seul un plan dont le digest est identique à ce
 fichier publié (CANONICAL_PLAN_PATH, relu et vérifié) est exécuté ; aucun repli.
 
 Règle d'arrêt effective : le plan impose l'arrêt après une génération épuisée sans adoption.
-run_arm boucle sur toutes ses générations et ne peut pas être interrompu de l'extérieur ;
-le lanceur n'appelle donc plus run_all. Pour chaque bras (ordre de arms.ARMS) et chaque
-graine, il appelle run_arm(arm, seed, learn, g, ...) avec g = 1, 2, 3, … jusqu'à count et
-examine le dernier enregistrement de la dernière exécution : si exhausted est vrai et
-transmission.digest == digest (ni changement de bibliothèque ni de procédure, donc aucune
-adoption), ou si g == count, cette exécution est conservée telle quelle. Elle décrit
-exactement les générations exécutées jusqu'à l'arrêt : la génération g+1 n'est jamais
-appelée ni débitée. Il n'y a plus de troncature a posteriori.
-Le rejeu repart de la génération 0 à chaque g ; il est déterministe (graines dérivées de
-la graine et de l'index), donc le préfixe est identique à celui d'une exécution plus
-longue. Son coût n'est pas nul : le nombre total de générations exécutées est quadratique
-en g (1 + 2 + … + g), et ce coût CPU n'a pas été mesuré pour une campagne complète.
+Chaque couple bras/graine est porté par un ArmRun persistant (fabrique new_run) qui reprend
+l'initialisation et le corps de boucle de arms.run_arm ; step() exécute UNE génération.
+Le lanceur appelle step() au plus count fois et teste _stops(record) après chaque génération :
+si exhausted est vrai et transmission.digest == digest (ni changement de bibliothèque ni de
+procédure, donc aucune adoption), il s'arrête immédiatement, sans aucun step supplémentaire ;
+sinon il s'arrête à count. Il n'y a plus de rejeu : chaque génération est exécutée une seule
+fois, et la dépense publiée est la dépense exécutée. Ni arms.run_arm ni arms.run_all ne sont
+appelés par le lanceur.
 L'adoption est déduite uniquement de la comparaison des deux digests (digest de
 l'enregistrement et digest de sa transmission) ; si l'un des deux manque, l'adoption n'est
 pas déductible : rien n'est supposé ni tronqué. Les bras et les graines sont isolés.
 Champs ajoutés à chaque exécution : stopped_early (la règle a joué), stop_reason
 ('exhausted_without_adoption' ou 'generation_limit') et generations_run, égal au nombre
-de générations réellement exécutées par le dernier appel.
+de générations réellement exécutées (nombre de appels à step()).
 """
 from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from pathlib import Path
 
@@ -99,23 +96,88 @@ def _stops(record):
     return transmission["digest"] == record["digest"]
 
 
-def run_until_stop(arm, seed, learn, count, limit, budget):
-    """Appelle run_arm pour g = 1, 2, … ; garde l'exécution où la règle joue ou où g == count."""
-    for g in range(1, count + 1):
-        result = arms.run_arm(arm, seed, learn, g, limit, budget)
-        records = result.get("generations") if isinstance(result, dict) else None
-        if not isinstance(records, list) or not records:
-            raise ValueError("résultat de run_arm hors contrat")
-        if _stops(records[-1]):
-            reason = STOP_REASON
-        elif g == count:
-            reason = LIMIT_REASON
+class ArmRun:
+    """Exécution persistante d'un couple bras/graine ; step() exécute une seule génération."""
+
+    def __init__(self, arm, seed, tasks, limit, budget):
+        if arm not in arms.ARMS:
+            raise ValueError(f"bras inconnu : {arm!r}")
+        self.arm, self.seed, self.limit, self.budget = arm, seed, limit, budget
+        self.tasks = arms._learn(tasks)
+        self.engine = arms.ce.Engine()
+        self.state = arms.lineage.initial_state() if arm == "inherited_lineage" else None
+        self.procedure = None
+        if arm == "fixed_procedure":
+            self.procedure = arms.cp.seed_procedure()
+        elif arm == "random_procedure":
+            self.procedure = arms._draw_random(seed)
+        self.index = 0
+        self.parent = None
+
+    def step(self):
+        index = self.index
+        lib_d, proc_d = arms._view(self.engine, self.procedure, self.state)
+        meter = arms.ce.Meter(self.limit)
+        if self.arm == "inherited_lineage":
+            self.state = arms.lineage.step(self.state, self.tasks, self.budget, meter, random.Random(f"meta|{self.seed}|{index}"))
+            spend = self.state["spent"]
+            exhausted = self.state["exhausted"]
+            score = self.state["parent_score"]
+            selection = score
         else:
-            continue
-        final = dict(result)
-        final.update(stopped_early=reason == STOP_REASON, stop_reason=reason, generations_run=len(records))
-        return final
-    raise ValueError("aucune génération exécutée")
+            self.engine, spend, exhausted, solutions = arms._generation(self.arm, self.engine, self.procedure, self.tasks, self.budget, meter, index)
+            score = arms._score(solutions)
+            selection = None
+        spend = {post: spend[post] for post in sorted(spend)}
+        arms._check(spend, meter, self.limit)
+        out_lib, out_proc = arms._view(self.engine, self.procedure, self.state)
+        digest = arms._node(lib_d, proc_d)
+        transmission_digest = arms._node(out_lib, out_proc)
+        record = {
+            "index": index,
+            "parent": self.parent,
+            "digest": digest,
+            "library_digest": lib_d,
+            "procedure_digest": proc_d,
+            "spent": meter.spent,
+            "limit": self.limit,
+            "spend": spend,
+            "score": score,
+            "selection_score": selection,
+            "exhausted": bool(exhausted),
+            "transmission": {"digest": transmission_digest, "library_digest": out_lib, "procedure_digest": out_proc},
+        }
+        self.parent = transmission_digest
+        self.index = index + 1
+        return record
+
+
+def new_run(arm, seed, tasks, limit, budget):
+    """Fabrique d'un ArmRun persistant (point d'injection pour les tests)."""
+    return ArmRun(arm, seed, tasks, limit, budget)
+
+
+def run_until_stop(arm, seed, learn, count, limit, budget):
+    """Un seul run persistant ; step() au plus count fois, arrêt immédiat dès que _stops joue."""
+    run = new_run(arm, seed, learn, limit, budget)
+    records = []
+    reason = LIMIT_REASON
+    for _ in range(count):
+        record = run.step()
+        records.append(record)
+        if _stops(record):
+            reason = STOP_REASON
+            break
+    return {
+        "arm": arm,
+        "seed": seed,
+        "task_budget": budget,
+        "per_generation_limit": limit,
+        "generations": records,
+        "stopped_early": reason == STOP_REASON,
+        "stop_reason": reason,
+        "generations_run": len(records),
+    }
 
 
 def run_campaign(plan, seeds=None, generations=None):

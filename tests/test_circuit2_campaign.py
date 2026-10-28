@@ -39,24 +39,61 @@ def _record(exhausted=False, adopted=False, label="d", spent=10):
     return {"exhausted": exhausted, "digest": label, "spent": spent, "transmission": {"digest": (label + "+") if adopted else label}}
 
 
-def _fake_run_arm(calls, script=None):
-    """Faux run_arm instrumenté : enregistre chaque appel, enregistrements contrôlés (fixtures unitaires)."""
+class _FakeRun:
+    """Fixture unitaire : faux ArmRun ; step() enregistre (arm, seed, index) et rend les enregistrements scriptés."""
 
-    def run_arm(arm, seed, learn, generations, limit, budget):
-        calls.append({"arm": arm, "seed": seed, "generations": generations, "learn": learn, "limit": limit, "budget": budget})
-        make = script or (lambda a, s, g: _record())
-        return {"arm": arm, "seed": seed, "generations": [make(arm, seed, g) for g in range(1, generations + 1)]}
+    def __init__(self, calls, script, arm, seed, learn, limit, budget):
+        self.calls, self.make = calls, script or (lambda a, s, g: _record())
+        self.arm, self.seed, self.learn, self.limit, self.budget = arm, seed, learn, limit, budget
+        self.index = 0
 
-    return run_arm
+    def step(self):
+        index, self.index = self.index, self.index + 1
+        record = self.make(self.arm, self.seed, index + 1)
+        self.calls.append({"arm": self.arm, "seed": self.seed, "index": index, "generations": index + 1, "learn": self.learn, "limit": self.limit, "budget": self.budget, "spent": record.get("spent", 0)})
+        return record
+
+
+def _fake_new_run(calls, script=None):
+    """Faux new_run instrumenté (fixtures unitaires, aucune mesure)."""
+
+    def new_run(arm, seed, learn, limit, budget):
+        return _FakeRun(calls, script, arm, seed, learn, limit, budget)
+
+    return new_run
 
 
 def _no_run_all(*args, **kwargs):
     raise AssertionError("run_all ne doit plus être appelé par le lanceur")
 
 
+def _no_run_arm(*args, **kwargs):
+    raise AssertionError("run_arm ne doit plus être appelé par le lanceur")
+
+
 def _patch(monkeypatch, calls, script=None):
     monkeypatch.setattr(campaign.arms, "run_all", _no_run_all)
-    monkeypatch.setattr(campaign.arms, "run_arm", _fake_run_arm(calls, script))
+    monkeypatch.setattr(campaign.arms, "run_arm", _no_run_arm)
+    monkeypatch.setattr(campaign, "new_run", _fake_new_run(calls, script))
+
+
+def _check_executed(calls, result, count, plan):
+    """Chaque (arm, seed, index) une fois, index consécutifs, arrêt immédiat, dépense exécutée == publiée, plafond du plan."""
+    keys = [(c["arm"], c["seed"], c["index"]) for c in calls]
+    assert len(keys) == len(set(keys))
+    total_runs = 0
+    for arm in ARMS:
+        for run in result["arms"][arm]:
+            total_runs += 1
+            mine = [c for c in calls if c["arm"] == arm and c["seed"] == run["seed"]]
+            assert [c["index"] for c in mine] == list(range(len(mine)))
+            assert len(mine) == run["generations_run"] == len(run["generations"])
+            assert sum(c.get("spent", 0) for c in mine) == sum(r.get("spent", 0) for r in run["generations"])
+            assert not any(campaign._stops(r) for r in run["generations"][:-1])
+            if run["stopped_early"]:
+                assert campaign._stops(run["generations"][-1])
+    assert len(calls) == sum(len(r["generations"]) for rs in result["arms"].values() for r in rs)
+    assert sum(c["spent"] for c in calls) <= total_runs * count * plan["budgets"]["per_generation_limit"]
 
 
 def _gens_for(calls, arm, seed):
@@ -273,6 +310,7 @@ def test_stop_at_the_second_generation_is_effective_and_the_third_is_never_calle
     assert run["generations_run"] == len(run["generations"]) == 2
     assert run["stopped_early"] is True and run["stop_reason"] == "exhausted_without_adoption"
     assert sum(record["spent"] for record in run["generations"]) == 2 * 10
+    _check_executed(calls, result, count, sealed)
 
 
 def test_exhaustion_with_adoption_continues_until_the_generation_limit(sealed, monkeypatch):
@@ -280,10 +318,12 @@ def test_exhaustion_with_adoption_continues_until_the_generation_limit(sealed, m
     calls, arm, seed = [], ARMS[0], sealed["seeds"][0]
     count = sealed["budgets"]["generations"]
     _patch(monkeypatch, calls, _script({(arm, seed): 2}, adopted={(arm, seed)}))
-    run = campaign.run_campaign(sealed, seeds=[seed], generations=count)["arms"][arm][0]
+    result = campaign.run_campaign(sealed, seeds=[seed], generations=count)
+    run = result["arms"][arm][0]
     assert _gens_for(calls, arm, seed) == list(range(1, count + 1))
     assert run["generations_run"] == len(run["generations"]) == count
     assert run["stopped_early"] is False and run["stop_reason"] == "generation_limit"
+    _check_executed(calls, result, count, sealed)
 
 
 def test_missing_digests_never_truncate(sealed, monkeypatch):
@@ -297,6 +337,7 @@ def test_missing_digests_never_truncate(sealed, monkeypatch):
         assert _gens_for(calls, name, seed) == list(range(1, count + 1))
         assert run["generations_run"] == len(run["generations"]) == count
         assert run["stopped_early"] is False and run["stop_reason"] == "generation_limit"
+    _check_executed(calls, result, count, sealed)
 
 
 def test_a_stop_does_not_influence_other_arms_or_seeds(sealed, monkeypatch):
@@ -312,6 +353,7 @@ def test_a_stop_does_not_influence_other_arms_or_seeds(sealed, monkeypatch):
     assert stopped["generations_run"] == 2 and stopped["stopped_early"] is True
     assert other["seed"] == second and other["generations_run"] == count
     assert other["stopped_early"] is False and other["stop_reason"] == "generation_limit"
+    _check_executed(calls, result, count, sealed)
 
 
 def test_reduced_real_run_of_the_four_arms_applies_the_stop_rule(sealed):
@@ -333,12 +375,53 @@ def test_reduced_real_run_of_the_four_arms_applies_the_stop_rule(sealed):
         assert run["stop_reason"] == ("exhausted_without_adoption" if fired else "generation_limit")
 
 
-def test_real_run_arm_for_one_generation_is_a_prefix_of_two_generations(sealed):
-    """Justifie le rejeu déterministe (bras frozen_engine, hors lignée). Temps CPU non mesuré."""
-    seed = sealed["seeds"][0]
-    learn = freeze.learn_tasks()
-    limit, budget = sealed["budgets"]["per_generation_limit"], sealed["budgets"]["task_budget"]
-    one = campaign.arms.run_arm("frozen_engine", seed, learn, 1, limit, budget)
-    two = campaign.arms.run_arm("frozen_engine", seed, learn, 2, limit, budget)
-    assert len(one["generations"]) == 1 and len(two["generations"]) == 2
-    assert one["generations"] == two["generations"][:1]
+REAL_GENERATIONS = 3
+
+
+def _instrumented(monkeypatch):
+    """Compte les steps réels de ArmRun et additionne le spent des Meter créés pendant chacun."""
+    real_meter, real_step = campaign.arms.ce.Meter, campaign.ArmRun.step
+    meters, steps = [], []
+
+    class SpyMeter(real_meter):
+        def __init__(self, limit):
+            super().__init__(limit)
+            meters.append(self)
+
+    def step(self):
+        before = len(meters)
+        index = self.index
+        record = real_step(self)
+        steps.append((self.arm, self.seed, index, sum(m.spent for m in meters[before:])))
+        return record
+
+    monkeypatch.setattr(campaign.arms.ce, "Meter", SpyMeter)
+    monkeypatch.setattr(campaign.ArmRun, "step", step)
+    return steps
+
+
+def _real_args(plan):
+    budgets = plan["budgets"]
+    return plan["seeds"][0], freeze.learn_tasks(), budgets["per_generation_limit"], budgets["task_budget"]
+
+
+@pytest.mark.parametrize("arm", ARMS)
+def test_real_runs_execute_each_generation_once_and_publish_the_executed_spend(sealed, monkeypatch, arm):
+    """Exécution réelle hors réseau : 1 graine, 3 générations par bras (durée non mesurée)."""
+    steps = _instrumented(monkeypatch)
+    seed, learn, limit, budget = _real_args(sealed)
+    run = campaign.run_until_stop(arm, seed, learn, REAL_GENERATIONS, limit, budget)
+    assert [(a, s, i) for a, s, i, _ in steps] == [(arm, seed, i) for i in range(run["generations_run"])]
+    assert len(steps) == run["generations_run"] == len(run["generations"])
+    assert sum(spent for *_, spent in steps) == sum(r["spent"] for r in run["generations"])
+    assert 1 <= len(steps) <= REAL_GENERATIONS
+    assert not any(campaign._stops(r) for r in run["generations"][:-1])
+
+
+@pytest.mark.parametrize("arm", ARMS)
+def test_persistent_run_equals_the_run_arm_trajectory(sealed, arm):
+    """Même trajectoire que arms.run_arm sur generations_run générations, sans rejeu."""
+    seed, learn, limit, budget = _real_args(sealed)
+    run = campaign.run_until_stop(arm, seed, learn, REAL_GENERATIONS, limit, budget)
+    reference = campaign.arms.run_arm(arm, seed, learn, run["generations_run"], limit, budget)
+    assert run["generations"] == reference["generations"]
