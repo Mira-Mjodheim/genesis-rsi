@@ -214,6 +214,7 @@ def test_a_parent_is_kept_when_no_candidate_is_strictly_better():
 
 
 def test_a_candidate_is_adopted_only_when_strictly_better():
+    """Invariant check over a real run; adoption itself is required by the controlled-fixture test below."""
     states = _run(4)
     for before, after in zip(states, states[1:]):
         if after["adopted"]:
@@ -368,3 +369,56 @@ def test_a_chain_must_start_at_a_true_root(build, sealed):
         lineage.verify_lineage(chain)
     assert lineage.verify_lineage(states) is True
     assert lineage.verify_lineage([states[0]]) is True
+
+
+PARENT_SCORE = (4, -2139)
+BETTER_SCORE = (5, -1951)
+
+
+def _scored_fixture(monkeypatch, base, parent_exhausted, candidate_exhausted):
+    parent_digest = base["procedure"]["procedure_digest"]
+    calls = []
+
+    def fake_improved_by(current, given, budget, baseline, procedure, meter, generation=None):
+        digest = cp.to_record(procedure)["procedure_digest"]
+        calls.append(digest)
+        if digest == parent_digest:
+            return current, PARENT_SCORE, {"spent": {}, "exhausted": parent_exhausted}
+        return current, BETTER_SCORE, {"spent": {}, "exhausted": candidate_exhausted}
+
+    monkeypatch.setattr(engine, "improved_by", fake_improved_by)
+    monkeypatch.setattr(lineage, "_score", lambda x: x)
+    return calls, parent_digest
+
+
+def test_an_exhausted_parent_skips_stage_b_unit_test_with_a_controlled_fixture(monkeypatch):
+    """Unit test of the rule only (improved_by is replaced by a fixture): no experimental result is claimed."""
+    base = lineage.replace_procedure(lineage.initial_state(), _procedure(admit=11))
+    calls, parent_digest = _scored_fixture(monkeypatch, base, True, True)
+    meter = Meter(20000)
+    out = lineage.step(base, LEARN, BUDGET, meter, _rng(0))
+    assert calls == [parent_digest]
+    assert out["adopted"] is False
+    assert out["procedure"] == base["procedure"]
+    assert out["evaluated"] == []
+    assert out["exhausted"] is True
+    assert out["score"] == out["parent_score"] == [4, -2139]
+    assert out["spent"]["procedure"] == 0 and out["spent"]["synthesis"] == 0
+    assert sum(out["spent"].values()) == meter.spent
+    assert lineage.verify_lineage([base, out]) is True
+
+
+def test_an_exhausted_better_candidate_is_not_adopted_unit_test_with_a_controlled_fixture(monkeypatch):
+    """Unit test of the rule only (improved_by is replaced by a fixture): no experimental result is claimed."""
+    base = lineage.replace_procedure(lineage.initial_state(), _procedure(admit=11))
+    calls, parent_digest = _scored_fixture(monkeypatch, base, False, True)
+    meter = Meter(20000)
+    out = lineage.step(base, LEARN, BUDGET, meter, _rng(0))
+    assert calls[0] == parent_digest and len(calls) > 1
+    assert out["evaluated"]
+    assert out["adopted"] is False
+    assert out["procedure"] == base["procedure"]
+    assert out["exhausted"] is True
+    assert out["score"] == out["parent_score"] == [4, -2139]
+    assert sum(out["spent"].values()) == meter.spent
+    assert lineage.verify_lineage([base, out]) is True
