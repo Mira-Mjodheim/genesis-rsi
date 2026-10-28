@@ -302,8 +302,9 @@ def test_integrity_incomplete_manifest_refused(real_integrity, tmp_path):
         )
 
 
-def test_integrity_recomputed_manifest_after_alteration_refused(real_integrity, tmp_path):
+def test_integrity_recomputed_manifest_after_alteration_refused(real_integrity, monkeypatch, tmp_path):
     root, manifest, rels = _integrity_tree(tmp_path)
+    _forbid_compute(monkeypatch)
     (root / rels[0]).write_bytes(b"altere\n")
     recalcule = tmp_path / "recalcule.json"
     fce.write_manifest(recalcule, root=root, paths=rels)
@@ -337,8 +338,9 @@ def test_integrity_real_files_conforming_copy_accepted(real_integrity, tmp_path)
     assert adj.verify_executables(copie, canonical_path=canon) is None
 
 
-def test_integrity_real_files_modified_copy_refused(real_integrity, tmp_path):
+def test_integrity_real_files_modified_copy_refused(real_integrity, monkeypatch, tmp_path):
     canon = _real_canonical(tmp_path)
+    _forbid_compute(monkeypatch)
     data = json.loads(canon.read_text(encoding="utf-8"))
     rel = sorted(data["files"])[0]
     data["files"][rel] = "0" * 64
@@ -718,3 +720,110 @@ def test_measure_held_out_evaluates_full_suite(monkeypatch):
     assert all(a is b for a, b in zip(tasks, expected))
     # Les tâches à 4 entrées ou plus (famille multiply) ne sont plus écartées.
     assert max(_n_inputs(t) for t in tasks) >= 4
+
+
+def _same_json_other_bytes(raw):
+    """Variantes au contenu JSON égal mais aux octets différents."""
+    import re
+
+    data = json.loads(raw)
+    reformatted = [
+        json.dumps(data, indent=4),
+        json.dumps(data, indent=4) + "\n",
+        json.dumps(data, separators=(",", ":")),
+    ]
+    rel = sorted(data["files"])[0]
+    pattern = (
+        re.escape(json.dumps(rel))
+        + r"\s*:\s*"
+        + re.escape(json.dumps(data["files"][rel]))
+    )
+    match = re.search(pattern, raw)
+    assert match, "clé de fichier introuvable dans le manifeste"
+    duplicated = raw[: match.end()] + "," + match.group(0) + raw[match.end():]
+    reformatted = [v for v in reformatted if v != raw]
+    assert reformatted, "aucune variante reformatée distincte du canonique"
+    return reformatted, duplicated
+
+
+def _same_json_sources(tmp_path, source):
+    """(racine, canonique, requis) : arbre factice ou vrais exécutables."""
+    if source == "vrais_executables":
+        return ROOT, _real_canonical(tmp_path), fce.EXECUTABLES
+    root, manifest, rels = _integrity_tree(tmp_path)
+    return root, manifest, rels
+
+
+@pytest.mark.parametrize("source", ["arbre_factice", "vrais_executables"])
+@pytest.mark.parametrize("kind", ["reformate", "cle_dupliquee"])
+def test_integrity_same_json_other_bytes_refused(real_integrity, monkeypatch, tmp_path, source, kind):
+    _forbid_compute(monkeypatch)
+    root, canon, required = _same_json_sources(tmp_path, source)
+    raw = canon.read_text(encoding="utf-8")
+    reformatted, duplicated = _same_json_other_bytes(raw)
+    variants = reformatted if kind == "reformate" else [duplicated]
+    for index, text in enumerate(variants):
+        variant = tmp_path / f"variante_{index}.json"
+        variant.write_text(text, encoding="utf-8")
+        # Sans contenu JSON égal, le test ne prouverait rien.
+        assert json.loads(text) == json.loads(raw)
+        assert variant.read_bytes() != canon.read_bytes()
+        with pytest.raises(adj.PlanError, match="différent du manifeste canonique"):
+            adj.verify_executables(
+                variant, root=root, canonical_path=canon, required=required
+            )
+
+
+def test_main_refuses_same_json_other_bytes_without_computing(monkeypatch, capsys, tmp_path):
+    root, manifest, rels = _integrity_tree(tmp_path)
+    reformatted, duplicated = _same_json_other_bytes(manifest.read_text(encoding="utf-8"))
+    _bind_root(monkeypatch, root, manifest, rels)
+    _forbid_compute(monkeypatch)
+    seed = str(_plan()["seeds"][0])
+    for index, text in enumerate(reformatted + [duplicated]):
+        variant = tmp_path / f"variante_{index}.json"
+        variant.write_text(text, encoding="utf-8")
+        out = _results_tmp()
+        argv = ["--seeds", seed, "--out", str(out), "--integrity", str(variant)]
+        try:
+            _assert_refused(capsys, out, argv)
+        finally:
+            out.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize("arm", ["frozen_engine", "inherited_lineage"])
+def test_main_end_to_end_real_computation(real_integrity, monkeypatch, tmp_path, arm):
+    """Parcours réduit réel : aucune doublure sur final_library, la mesure ni new_run."""
+    plan = _plan()
+    budget = plan["budgets"]["task_budget"]
+    limit = plan["budgets"]["per_generation_limit"]
+    seed = plan["seeds"][0]
+    canon = tmp_path / "canon.json"
+    fce.write_manifest(canon, root=ROOT, paths=fce.EXECUTABLES)
+    monkeypatch.setattr(fce, "MANIFEST_PATH", canon)
+    out = _results_tmp()
+    argv = ["--seeds", str(seed), "--generations", "1", "--arms", arm, "--out", str(out)]
+    try:
+        assert adj.main(argv) == 0
+        data = _read(out)
+    finally:
+        out.unlink(missing_ok=True)
+    assert len(data["rows"]) == 1
+    row = data["rows"][0]
+    assert row["arm"] == arm
+    assert row["seed"] == seed
+    assert row["generations"] == 1
+    assert isinstance(row["held_out_yield"], (int, float))
+    assert not isinstance(row["held_out_yield"], bool)
+    _records, engine, _final, _initial = adj.final_library(
+        arm, seed, fcp.learn_tasks(), limit, budget, 1
+    )
+    assert row["library_fingerprint"] == adj.fingerprint(engine.record())
+    held_out = list(ct.circuit2_suite(tuple(ct.HELD_OUT)))
+    reference = ce.measure(
+        ce.attempt(adj.engine_from_record(engine.record()), held_out, budget)
+    )[0]
+    assert row["held_out_yield"] == reference
+    assert data["plan_digest"] == plan["digest"]
+    assert data["arms"] == [arm]
+    assert data["scale"] == "reduced"

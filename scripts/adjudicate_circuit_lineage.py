@@ -110,7 +110,7 @@ def verify_executables(manifest_path=None, root=ROOT, canonical_path=None, requi
        invalide => PlanError) ;
     b. ses fichiers listés doivent être exactement ceux de `required` ;
     c. un manifeste `manifest_path` distinct du canonique n'est admis que s'il
-       en est une copie conforme (contenu JSON égal), jamais comme source
+       en est une copie octet pour octet (octets bruts, non le contenu JSON), jamais comme source
        d'empreintes ;
     d. chaque fichier de `root` est comparé aux empreintes canoniques.
     Aucun calcul ni lecture de HELD_OUT.
@@ -137,8 +137,17 @@ def verify_executables(manifest_path=None, root=ROOT, canonical_path=None, requi
             f"manque {missing}, surplus {extra}"
         )
     if manifest_path is not None and Path(manifest_path) != canonical_path:
-        provided = _read_manifest(manifest_path, "fourni")
-        if provided != canonical:
+        try:
+            provided = Path(manifest_path).read_bytes()
+        except FileNotFoundError as exc:
+            raise PlanError(f"manifeste d'exécutables fourni absent : {manifest_path}") from exc
+        except OSError as exc:
+            raise PlanError(f"manifeste d'exécutables fourni illisible : {exc}") from exc
+        try:
+            reference = canonical_path.read_bytes()
+        except OSError as exc:
+            raise PlanError(f"manifeste d'exécutables canonique illisible : {exc}") from exc
+        if provided != reference:
             raise PlanError("manifeste fourni différent du manifeste canonique")
     for rel in sorted(files):
         try:
