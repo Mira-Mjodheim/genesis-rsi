@@ -15,6 +15,7 @@ for _p in (str(ROOT), str(ROOT / "scripts")):
 import adjudicate_circuit_lineage as adj  # noqa: E402
 import freeze_circuit2_plan as fcp  # noqa: E402
 import run_circuit2_arms as rca  # noqa: E402
+import run_circuit2_campaign as rcc  # noqa: E402
 from genesis import circuit_engine as ce  # noqa: E402
 from genesis import circuit_tasks as ct  # noqa: E402
 
@@ -165,9 +166,18 @@ def test_final_library_matches_run_arm():
     assert adj.fingerprint(reloaded.record()) == adj.fingerprint(engine.record())
 
 
+def _fake_record(same, exhausted=True):
+    """Enregistrement de génération minimal, sans calcul."""
+    return {
+        "exhausted": exhausted,
+        "digest": "d0",
+        "transmission": {"digest": "d0" if same else "d1", "library_digest": "d0"},
+    }
+
+
 def _stub_final_library(arm, seed, tasks, limit, budget, generations):
     """Stub (non réel) : petits enregistrements, Engine() vide."""
-    records = [{"stub": True, "arm": arm, "seed": seed}]
+    records = [dict(_fake_record(False, False), stub=True, arm=arm, seed=seed)]
     return records, ce.Engine(), None, None
 
 
@@ -204,7 +214,8 @@ def _read(out):
     return json.loads(out.read_text(encoding="utf-8"))
 
 
-def test_main_four_arms_writes_file(monkeypatch):
+def test_main_writes_four_rows_with_doubled_arms(monkeypatch):
+    """Écriture du fichier avec bras doublés : aucun ArmRun n'est exécuté."""
     _use_stubs(monkeypatch)
     plan = _plan()
     out = _results_tmp()
@@ -215,6 +226,100 @@ def test_main_four_arms_writes_file(monkeypatch):
         assert len(_read(out)["rows"]) == 4
     finally:
         out.unlink(missing_ok=True)
+
+
+def test_main_four_arms_real_arm_runs(monkeypatch):
+    """Les quatre bras sont exécutés pour de vrai, avec une limite réduite à 2."""
+    plan = _plan()
+    if len(plan["seeds"]) == 1 and plan["budgets"]["generations"] == 1:
+        pytest.skip("le plan ne permet pas d'exécution réduite")
+
+    def small_new_run(arm, seed, tasks, limit, budget):
+        return rcc.new_run(arm, seed, tasks, 2, budget)
+
+    monkeypatch.setattr(adj, "new_run", small_new_run)
+    monkeypatch.setattr(adj, "measure_held_out", _stub_measure_held_out)
+    out = _results_tmp()
+    try:
+        argv = ["--seeds", str(plan["seeds"][0]), "--generations", "1", "--out", str(out)]
+        assert adj.main(argv) == 0
+        assert out.exists()
+        data = _read(out)
+    finally:
+        out.unlink(missing_ok=True)
+    rows = data["rows"]
+    assert len(rows) == 4
+    assert [row["arm"] for row in rows] == list(rca.ARMS)
+    for row in rows:
+        assert row["library_fingerprint"]
+        assert row["generations"] == 1
+        assert "stop_reason" in row
+    assert data["scale"] == "reduced"
+
+
+class _FakeRun:
+    """ArmRun doublé : compte les appels de step()."""
+
+    def __init__(self, same):
+        self.same = same
+        self.calls = 0
+        self.procedure = None
+        self.engine = ce.Engine()
+
+    def step(self):
+        self.calls += 1
+        return _fake_record(self.same)
+
+
+def _inject_fake_run(monkeypatch, same):
+    run = _FakeRun(same)
+    monkeypatch.setattr(adj, "new_run", lambda *args, **kwargs: run)
+    return run
+
+
+def test_stop_reason_exhausted_without_adoption(monkeypatch):
+    run = _inject_fake_run(monkeypatch, True)
+    records, _engine, _final, _initial = adj.final_library(
+        "fixed_procedure", 0, [], 2, 1, 3
+    )
+    assert run.calls == 1
+    assert len(records) == 1
+    assert adj.stop_reason(records) == "exhausted_without_adoption"
+
+
+def test_stop_reason_generation_limit(monkeypatch):
+    run = _inject_fake_run(monkeypatch, False)
+    records, _engine, _final, _initial = adj.final_library(
+        "fixed_procedure", 0, [], 2, 1, 3
+    )
+    assert run.calls == 3
+    assert len(records) == 3
+    assert adj.stop_reason(records) == "generation_limit"
+
+
+def _scale_of(monkeypatch, extra):
+    _use_stubs(monkeypatch)
+    plan = _plan()
+    out = _results_tmp()
+    argv = (
+        ["--seeds"] + [str(s) for s in plan["seeds"]]
+        + ["--generations", str(plan["budgets"]["generations"]), "--out", str(out)]
+        + extra
+    )
+    try:
+        assert adj.main(argv) == 0
+        return _read(out)["scale"]
+    finally:
+        out.unlink(missing_ok=True)
+
+
+def test_scale_reduced_with_single_arm(monkeypatch):
+    scale = _scale_of(monkeypatch, ["--arms", "inherited_lineage"])
+    assert scale == "reduced"
+
+
+def test_scale_full_with_complete_campaign(monkeypatch):
+    assert _scale_of(monkeypatch, []) == "full"
 
 
 def test_main_metadata_reduced_scale(monkeypatch):
@@ -230,7 +335,7 @@ def test_main_metadata_reduced_scale(monkeypatch):
         data = _read(out)
     finally:
         out.unlink(missing_ok=True)
-    assert data["plan_digest"] == adj.fingerprint(plan)
+    assert data["plan_digest"] == plan["digest"]
     assert "machinery_commit" in data
     assert data["task_budget"] == plan["budgets"]["task_budget"]
     assert data["per_generation_limit"] == plan["budgets"]["per_generation_limit"]

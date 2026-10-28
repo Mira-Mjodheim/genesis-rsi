@@ -70,6 +70,13 @@ def final_library(arm, seed, tasks, limit, budget, generations):
     return records, engine, _procedure_record(run, arm), initial
 
 
+def stop_reason(records):
+    """Raison d'arrêt d'une exécution, dérivée des enregistrements de génération."""
+    if records and rcc._stops(records[-1]):
+        return rcc.STOP_REASON
+    return rcc.LIMIT_REASON
+
+
 def measure_held_out(engine, plan_path=None):
     """Rendement held-out de `engine` après vérification du plan gelé.
 
@@ -175,17 +182,16 @@ def main(argv=None):
                 "held_out_yield": measure_held_out(engine, plan_path),
                 "library_fingerprint": fingerprint(engine.record()),
             }
-            last = records[-1] if records else None
-            if isinstance(last, dict) and last.get("stop_reason") is not None:
-                row["stop_reason"] = last["stop_reason"]
+            row["stop_reason"] = stop_reason(records)
             rows.append(row)
     full = (
         set(args.seeds) == set(plan["seeds"])
         and args.generations == plan["budgets"]["generations"]
+        and set(arms) == set(rca.ARMS)
     )
     payload = {
         "rows": rows,
-        "plan_digest": fingerprint(plan),
+        "plan_digest": plan["digest"],
         "machinery_commit": _git_commit(),
         "task_budget": budget,
         "per_generation_limit": limit,
