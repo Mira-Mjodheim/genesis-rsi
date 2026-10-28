@@ -35,18 +35,32 @@ def canonical(tmp_path, sealed, monkeypatch):
     return path
 
 
-def _record(exhausted=False, adopted=False, label="d"):
-    return {"exhausted": exhausted, "digest": label, "transmission": {"digest": (label + "+") if adopted else label}}
+def _record(exhausted=False, adopted=False, label="d", spent=10):
+    return {"exhausted": exhausted, "digest": label, "spent": spent, "transmission": {"digest": (label + "+") if adopted else label}}
 
 
-def _fake(calls, records=None):
-    def run_all(*args):
-        calls.append(args)
-        seeds, count = list(args[1]), args[2]
-        per_run = list(records) if records is not None else [_record() for _ in range(count)]
-        arms_out = {name: [{"seed": s, "generations": copy.deepcopy(per_run)} for s in seeds] for name in ARMS}
-        return {"seeds": seeds, "arms": arms_out}
-    return run_all
+def _fake_run_arm(calls, script=None):
+    """Faux run_arm instrumenté : enregistre chaque appel, enregistrements contrôlés (fixtures unitaires)."""
+
+    def run_arm(arm, seed, learn, generations, limit, budget):
+        calls.append({"arm": arm, "seed": seed, "generations": generations, "learn": learn, "limit": limit, "budget": budget})
+        make = script or (lambda a, s, g: _record())
+        return {"arm": arm, "seed": seed, "generations": [make(arm, seed, g) for g in range(1, generations + 1)]}
+
+    return run_arm
+
+
+def _no_run_all(*args, **kwargs):
+    raise AssertionError("run_all ne doit plus être appelé par le lanceur")
+
+
+def _patch(monkeypatch, calls, script=None):
+    monkeypatch.setattr(campaign.arms, "run_all", _no_run_all)
+    monkeypatch.setattr(campaign.arms, "run_arm", _fake_run_arm(calls, script))
+
+
+def _gens_for(calls, arm, seed):
+    return [c["generations"] for c in calls if c["arm"] == arm and c["seed"] == seed]
 
 
 def _keys(value):
@@ -87,22 +101,27 @@ def test_a_plan_with_other_machinery_fingerprints_is_refused(tmp_path, sealed):
         campaign.load_plan(path)
 
 
-def test_run_all_receives_exactly_the_plan_budgets_learn_tasks_and_seeds(sealed, monkeypatch):
+def test_run_arm_receives_exactly_the_plan_budgets_learn_tasks_and_seeds(sealed, monkeypatch):
     calls = []
-    monkeypatch.setattr(campaign.arms, "run_all", _fake(calls))
+    _patch(monkeypatch, calls)
     campaign.run_campaign(sealed)
-    assert len(calls) == 1
-    given, seeds, generations, limit, budget = calls[0]
-    assert limit == sealed["budgets"]["per_generation_limit"]
-    assert budget == sealed["budgets"]["task_budget"]
-    assert seeds == sealed["seeds"] and generations == sealed["budgets"]["generations"]
-    assert list(given) == freeze.learn_tasks()
+    count = sealed["budgets"]["generations"]
+    assert list(dict.fromkeys(c["arm"] for c in calls)) == list(campaign.arms.ARMS)
+    assert {c["seed"] for c in calls} == set(sealed["seeds"])
+    for call in calls:
+        assert call["limit"] == sealed["budgets"]["per_generation_limit"]
+        assert call["budget"] == sealed["budgets"]["task_budget"]
+        assert list(call["learn"]) == freeze.learn_tasks()
+    for arm in campaign.arms.ARMS:
+        for seed in sealed["seeds"]:
+            assert _gens_for(calls, arm, seed) == list(range(1, count + 1))
+    given = calls[0]["learn"]
     assert given and {t.family for t in given} <= set(tasks.LEARN)
 
 
 def test_seeds_outside_the_plan_or_too_many_generations_are_refused(sealed, monkeypatch):
     calls = []
-    monkeypatch.setattr(campaign.arms, "run_all", _fake(calls))
+    _patch(monkeypatch, calls)
     too_many = sealed["budgets"]["generations"] + 1
     for kwargs in ({"seeds": [999]}, {"seeds": [0, 999]}, {"seeds": []}, {"generations": too_many}, {"generations": 0}):
         with pytest.raises(ValueError):
@@ -112,7 +131,7 @@ def test_seeds_outside_the_plan_or_too_many_generations_are_refused(sealed, monk
 
 def test_scale_is_reduced_for_a_sub_campaign_and_full_otherwise(sealed, monkeypatch):
     calls = []
-    monkeypatch.setattr(campaign.arms, "run_all", _fake(calls))
+    _patch(monkeypatch, calls)
     small = campaign.run_campaign(sealed, seeds=[1, 0], generations=1)
     assert small["scale"] == "reduced" and small["seeds"] == [1, 0] and small["generations"] == 1
     fewer = campaign.run_campaign(sealed, generations=1)
@@ -124,7 +143,7 @@ def test_scale_is_reduced_for_a_sub_campaign_and_full_otherwise(sealed, monkeypa
 
 
 def test_a_second_write_to_the_same_output_is_refused(plan_path, tmp_path, monkeypatch):
-    monkeypatch.setattr(campaign.arms, "run_all", _fake([]))
+    _patch(monkeypatch, [])
     out = tmp_path / "OUT.json"
     argv = ["--plan", str(plan_path), "--seeds", "0", "--generations", "1", "--out", str(out)]
     assert campaign.main(argv) == 0
@@ -135,7 +154,7 @@ def test_a_second_write_to_the_same_output_is_refused(plan_path, tmp_path, monke
 
 
 def test_the_output_has_no_gain_or_success_key(sealed, monkeypatch):
-    monkeypatch.setattr(campaign.arms, "run_all", _fake([]))
+    _patch(monkeypatch, [])
     result = campaign.run_campaign(sealed, seeds=[0], generations=1)
     keys = [k.lower() for k in _keys(result)]
     assert keys and not [k for k in keys if any(word in k for word in FORBIDDEN)]
@@ -180,7 +199,7 @@ def test_a_plan_with_modified_reference_costs_resealed_is_refused(tmp_path, seal
 
 def test_an_altered_dict_passed_to_run_campaign_is_refused_without_running(sealed, monkeypatch):
     calls = []
-    monkeypatch.setattr(campaign.arms, "run_all", _fake(calls))
+    _patch(monkeypatch, calls)
     altered = copy.deepcopy(sealed)
     altered["criterion"]["text"] = altered["criterion"]["text"].replace("10 points", "5 points")
     assert altered["criterion"]["text"] != sealed["criterion"]["text"]
@@ -192,7 +211,7 @@ def test_an_altered_dict_passed_to_run_campaign_is_refused_without_running(seale
 
 def test_a_valid_plan_with_another_digest_is_refused(tmp_path, sealed, monkeypatch):
     calls = []
-    monkeypatch.setattr(campaign.arms, "run_all", _fake(calls))
+    _patch(monkeypatch, calls)
     other = freeze.build_plan(measure=lambda: {str(s): 101 for s in freeze.SEEDS}, machinery_commit=COMMIT)
     freeze.verify_plan(other)
     assert other["digest"] != sealed["digest"]
@@ -208,7 +227,7 @@ def test_a_valid_plan_with_another_digest_is_refused(tmp_path, sealed, monkeypat
 
 def test_a_missing_or_invalid_canonical_plan_is_refused_without_fallback(tmp_path, sealed, monkeypatch):
     calls = []
-    monkeypatch.setattr(campaign.arms, "run_all", _fake(calls))
+    _patch(monkeypatch, calls)
     monkeypatch.setattr(campaign, "CANONICAL_PLAN_PATH", tmp_path / "absent.json")
     with pytest.raises(freeze.PlanError):
         campaign.canonical_digest()
@@ -227,43 +246,72 @@ def test_canonical_digest_is_read_from_the_published_file(canonical, sealed):
     assert campaign.canonical_digest(canonical) == sealed["digest"]
 
 
-def test_stop_rule_truncates_after_the_first_exhausted_generation_without_adoption(sealed, monkeypatch):
-    """Fixture unitaire : enregistrements contrôlés par le test, aucune mesure."""
+def _script(stops=None, adopted=(), bare=False):
+    """Fixture unitaire : épuisement à la génération stops[(bras, graine)], avec adoption si la clé est dans adopted."""
+    stops = stops or {}
+
+    def make(arm, seed, g):
+        if bare:
+            return {"exhausted": True}
+        key = (arm, seed)
+        hit = stops.get(key) == g
+        return _record(exhausted=hit, adopted=hit and key in adopted, label=f"{arm}-{seed}-{g}")
+
+    return make
+
+
+def test_stop_at_the_second_generation_is_effective_and_the_third_is_never_called(sealed, monkeypatch):
+    """Fixture unitaire : enregistrements contrôlés par le faux run_arm, aucune mesure."""
+    calls, arm, seed = [], ARMS[0], sealed["seeds"][0]
     count = sealed["budgets"]["generations"]
-    records = [_record(), _record(exhausted=True)] + [_record(exhausted=True)] * 3
-    monkeypatch.setattr(campaign.arms, "run_all", _fake([], records))
-    result = campaign.run_campaign(sealed, seeds=[0, 1], generations=count)
-    assert set(result["arms"]) == set(ARMS)
-    for runs in result["arms"].values():
-        assert len(runs) == 2
-        for run in runs:
-            assert len(run["generations"]) == 2 and run["generations_run"] == 2
-            assert run["stopped_early"] is True
-            assert run["stop_reason"] == "exhausted_without_adoption"
+    assert count >= 3
+    _patch(monkeypatch, calls, _script({(arm, seed): 2}))
+    result = campaign.run_campaign(sealed, seeds=[seed], generations=count)
+    assert _gens_for(calls, arm, seed) == [1, 2]
+    assert not [c for c in calls if c["arm"] == arm and c["generations"] >= 3]
+    run = result["arms"][arm][0]
+    assert run["generations_run"] == len(run["generations"]) == 2
+    assert run["stopped_early"] is True and run["stop_reason"] == "exhausted_without_adoption"
+    assert sum(record["spent"] for record in run["generations"]) == 2 * 10
 
 
-def test_stop_rule_continues_after_an_exhausted_generation_with_adoption(sealed, monkeypatch):
-    """Fixture unitaire : épuisée mais avec adoption (digests différents) => poursuite."""
+def test_exhaustion_with_adoption_continues_until_the_generation_limit(sealed, monkeypatch):
+    """Fixture unitaire : épuisée mais digests différents (adoption) => poursuite jusqu'à count."""
+    calls, arm, seed = [], ARMS[0], sealed["seeds"][0]
     count = sealed["budgets"]["generations"]
-    records = [_record(exhausted=True, adopted=True)] + [_record() for _ in range(count - 1)]
-    monkeypatch.setattr(campaign.arms, "run_all", _fake([], records))
-    result = campaign.run_campaign(sealed, seeds=[0], generations=count)
-    for runs in result["arms"].values():
-        for run in runs:
-            assert run["generations_run"] == count == len(run["generations"])
-            assert run["stopped_early"] is False and run["stop_reason"] == "generation_limit"
+    _patch(monkeypatch, calls, _script({(arm, seed): 2}, adopted={(arm, seed)}))
+    run = campaign.run_campaign(sealed, seeds=[seed], generations=count)["arms"][arm][0]
+    assert _gens_for(calls, arm, seed) == list(range(1, count + 1))
+    assert run["generations_run"] == len(run["generations"]) == count
+    assert run["stopped_early"] is False and run["stop_reason"] == "generation_limit"
 
 
-def test_stop_rule_does_not_infer_adoption_when_digests_are_missing(sealed, monkeypatch):
-    """Fixture unitaire : sans les deux digests, l'adoption n'est pas déductible, aucune troncature."""
+def test_missing_digests_never_truncate(sealed, monkeypatch):
+    """Fixture unitaire : sans les deux digests, l'adoption n'est pas déductible ; rien n'est tronqué."""
+    calls, seed = [], sealed["seeds"][0]
     count = sealed["budgets"]["generations"]
-    records = [{"exhausted": True} for _ in range(count)]
-    monkeypatch.setattr(campaign.arms, "run_all", _fake([], records))
-    result = campaign.run_campaign(sealed, seeds=[0], generations=count)
-    for runs in result["arms"].values():
-        for run in runs:
-            assert run["generations_run"] == count
-            assert run["stopped_early"] is False and run["stop_reason"] == "generation_limit"
+    _patch(monkeypatch, calls, _script(bare=True))
+    result = campaign.run_campaign(sealed, seeds=[seed], generations=count)
+    for name in ARMS:
+        run = result["arms"][name][0]
+        assert _gens_for(calls, name, seed) == list(range(1, count + 1))
+        assert run["generations_run"] == len(run["generations"]) == count
+        assert run["stopped_early"] is False and run["stop_reason"] == "generation_limit"
+
+
+def test_a_stop_does_not_influence_other_arms_or_seeds(sealed, monkeypatch):
+    """Fixture unitaire : arrêt à la 2e pour (bras A, graine 0) ; (bras B, graine 1) va à count."""
+    calls, first, second = [], sealed["seeds"][0], sealed["seeds"][1]
+    count = sealed["budgets"]["generations"]
+    _patch(monkeypatch, calls, _script({(ARMS[0], first): 2}))
+    result = campaign.run_campaign(sealed, seeds=[first, second], generations=count)
+    assert _gens_for(calls, ARMS[0], first) == [1, 2]
+    for arm, seed in ((ARMS[1], second), (ARMS[0], second), (ARMS[1], first)):
+        assert _gens_for(calls, arm, seed) == list(range(1, count + 1))
+    stopped, other = result["arms"][ARMS[0]][0], result["arms"][ARMS[1]][1]
+    assert stopped["generations_run"] == 2 and stopped["stopped_early"] is True
+    assert other["seed"] == second and other["generations_run"] == count
+    assert other["stopped_early"] is False and other["stop_reason"] == "generation_limit"
 
 
 def test_reduced_real_run_of_the_four_arms_applies_the_stop_rule(sealed):
@@ -283,3 +331,14 @@ def test_reduced_real_run_of_the_four_arms_applies_the_stop_rule(sealed):
         fired = any(campaign._stops(r) for r in run["generations"])
         assert run["stopped_early"] is fired
         assert run["stop_reason"] == ("exhausted_without_adoption" if fired else "generation_limit")
+
+
+def test_real_run_arm_for_one_generation_is_a_prefix_of_two_generations(sealed):
+    """Justifie le rejeu déterministe (bras frozen_engine, hors lignée). Temps CPU non mesuré."""
+    seed = sealed["seeds"][0]
+    learn = freeze.learn_tasks()
+    limit, budget = sealed["budgets"]["per_generation_limit"], sealed["budgets"]["task_budget"]
+    one = campaign.arms.run_arm("frozen_engine", seed, learn, 1, limit, budget)
+    two = campaign.arms.run_arm("frozen_engine", seed, learn, 2, limit, budget)
+    assert len(one["generations"]) == 1 and len(two["generations"]) == 2
+    assert one["generations"] == two["generations"][:1]

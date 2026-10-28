@@ -6,18 +6,25 @@ gain, ni rendement, ni succès : l'adjudication exige l'évaluation tenue à l'�
 Rattachement au plan canonique : seul un plan dont le digest est identique à celui du
 fichier publié (CANONICAL_PLAN_PATH, relu et vérifié) est exécuté ; aucun repli.
 
-Règle d'arrêt : le plan impose l'arrêt après une génération épuisée sans adoption, alors que
-run_all boucle sur toutes les générations. Le lanceur l'applique a posteriori : pour chaque
-bras et chaque graine, la liste des générations est tronquée juste après la première
-génération dont l'enregistrement a exhausted vrai et transmission.digest == digest (ni
-changement de bibliothèque ni de procédure, donc aucune adoption). Les générations suivantes
-dépendent des précédentes : les résultats conservés sont identiques à ceux d'un arrêt réel.
-Le coût CPU des générations tronquées est payé quand même. L'adoption est déduite
-uniquement de la comparaison de ces deux digests (digest de l'enregistrement et digest de
-sa transmission) ; si l'un des deux manque, l'adoption n'est pas déductible : rien n'est
-tronqué et rien n'est supposé.
-Champs ajoutés à chaque exécution : stopped_early (la règle a joué), stop_reason (None,
-'exhausted_without_adoption' ou 'generation_limit') et generations_run.
+Règle d'arrêt effective : le plan impose l'arrêt après une génération épuisée sans adoption.
+run_arm boucle sur toutes ses générations et ne peut pas être interrompu de l'extérieur ;
+le lanceur n'appelle donc plus run_all. Pour chaque bras (ordre de arms.ARMS) et chaque
+graine, il appelle run_arm(arm, seed, learn, g, ...) avec g = 1, 2, 3, … jusqu'à count et
+examine le dernier enregistrement de la dernière exécution : si exhausted est vrai et
+transmission.digest == digest (ni changement de bibliothèque ni de procédure, donc aucune
+adoption), ou si g == count, cette exécution est conservée telle quelle. Elle décrit
+exactement les générations exécutées jusqu'à l'arrêt : la génération g+1 n'est jamais
+appelée ni débitée. Il n'y a plus de troncature a posteriori.
+Le rejeu repart de la génération 0 à chaque g ; il est déterministe (graines dérivées de
+la graine et de l'index), donc le préfixe est identique à celui d'une exécution plus
+longue. Son coût n'est pas nul : le nombre total de générations exécutées est quadratique
+en g (1 + 2 + … + g), et ce coût CPU n'a pas été mesuré pour une campagne complète.
+L'adoption est déduite uniquement de la comparaison des deux digests (digest de
+l'enregistrement et digest de sa transmission) ; si l'un des deux manque, l'adoption n'est
+pas déductible : rien n'est supposé ni tronqué. Les bras et les graines sont isolés.
+Champs ajoutés à chaque exécution : stopped_early (la règle a joué), stop_reason
+('exhausted_without_adoption' ou 'generation_limit') et generations_run, égal au nombre
+de générations réellement exécutées par le dernier appel.
 """
 from __future__ import annotations
 
@@ -92,22 +99,23 @@ def _stops(record):
     return transmission["digest"] == record["digest"]
 
 
-def apply_stop_rule(execution, count):
-    """Tronque a posteriori les générations d'une exécution selon la règle d'arrêt du plan."""
-    records = execution.get("generations") if isinstance(execution, dict) else None
-    if not isinstance(records, list):
-        raise ValueError("exécution sans liste de générations")
-    cut = next((i for i, record in enumerate(records) if _stops(record)), None)
-    kept = list(records) if cut is None else list(records[: cut + 1])
-    if cut is not None:
-        reason = STOP_REASON
-    elif len(kept) >= count:
-        reason = LIMIT_REASON
-    else:
-        reason = None
-    result = dict(execution)
-    result.update(generations=kept, stopped_early=cut is not None, stop_reason=reason, generations_run=len(kept))
-    return result
+def run_until_stop(arm, seed, learn, count, limit, budget):
+    """Appelle run_arm pour g = 1, 2, … ; garde l'exécution où la règle joue ou où g == count."""
+    for g in range(1, count + 1):
+        result = arms.run_arm(arm, seed, learn, g, limit, budget)
+        records = result.get("generations") if isinstance(result, dict) else None
+        if not isinstance(records, list) or not records:
+            raise ValueError("résultat de run_arm hors contrat")
+        if _stops(records[-1]):
+            reason = STOP_REASON
+        elif g == count:
+            reason = LIMIT_REASON
+        else:
+            continue
+        final = dict(result)
+        final.update(stopped_early=reason == STOP_REASON, stop_reason=reason, generations_run=len(records))
+        return final
+    raise ValueError("aucune génération exécutée")
 
 
 def run_campaign(plan, seeds=None, generations=None):
@@ -123,10 +131,8 @@ def run_campaign(plan, seeds=None, generations=None):
     if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= max_generations:
         raise ValueError(f"générations invalides : {count} (maximum du plan : {max_generations})")
     learn = freeze.learn_tasks()
-    results = arms.run_all(learn, chosen, count, budgets["per_generation_limit"], budgets["task_budget"])
-    if not isinstance(results, dict) or not isinstance(results.get("arms"), dict):
-        raise ValueError("résultat de run_all hors contrat")
-    bounded = {name: [apply_stop_rule(run, count) for run in runs] for name, runs in results["arms"].items()}
+    limit, budget = budgets["per_generation_limit"], budgets["task_budget"]
+    bounded = {arm: [run_until_stop(arm, seed, learn, count, limit, budget) for seed in chosen] for arm in arms.ARMS}
     full = set(chosen) == set(plan_seeds) and count == max_generations
     return {
         "plan_digest": plan["digest"],
