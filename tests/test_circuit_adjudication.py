@@ -228,33 +228,61 @@ def test_main_writes_four_rows_with_doubled_arms(monkeypatch):
         out.unlink(missing_ok=True)
 
 
+def _reference_arm(arm, seed, plan):
+    """Référence indépendante de adj.final_library, aux budgets gelés."""
+    limit = plan["budgets"]["per_generation_limit"]
+    budget = plan["budgets"]["task_budget"]
+    tasks = fcp.learn_tasks()
+    # run_arm : generations, limit, budget.
+    ref = rca.run_arm(arm, seed, tasks, 1, limit, budget)
+    if isinstance(ref, dict):
+        ref = ref["generations"]
+    # run_arm ne renvoie pas l'Engine : relecture via un ArmRun piloté une fois.
+    run = rcc.new_run(arm, seed, tasks, limit, budget)
+    run.step()
+    return ref, run.engine
+
+
 def test_main_four_arms_real_arm_runs(monkeypatch):
-    """Les quatre bras sont exécutés pour de vrai, avec une limite réduite à 2."""
+    """Quatre bras réels aux budgets gelés ; seule la mesure held-out est doublée."""
     plan = _plan()
     if len(plan["seeds"]) == 1 and plan["budgets"]["generations"] == 1:
         pytest.skip("le plan ne permet pas d'exécution réduite")
-
-    def small_new_run(arm, seed, tasks, limit, budget):
-        return rcc.new_run(arm, seed, tasks, 2, budget)
-
-    monkeypatch.setattr(adj, "new_run", small_new_run)
     monkeypatch.setattr(adj, "measure_held_out", _stub_measure_held_out)
+    seed = plan["seeds"][0]
+    limit = plan["budgets"]["per_generation_limit"]
+    budget = plan["budgets"]["task_budget"]
     out = _results_tmp()
     try:
-        argv = ["--seeds", str(plan["seeds"][0]), "--generations", "1", "--out", str(out)]
+        argv = ["--seeds", str(seed), "--generations", "1", "--out", str(out)]
         assert adj.main(argv) == 0
         assert out.exists()
         data = _read(out)
     finally:
         out.unlink(missing_ok=True)
+    assert data["plan_digest"] == plan["digest"]
+    assert "machinery_commit" in data
+    assert data["task_budget"] == budget
+    assert data["per_generation_limit"] == limit
+    assert data["generations"] == 1
+    assert data["seeds"] == [seed]
+    assert data["arms"] == list(rca.ARMS)
+    assert data["scale"] == "reduced"
     rows = data["rows"]
     assert len(rows) == 4
     assert [row["arm"] for row in rows] == list(rca.ARMS)
     for row in rows:
-        assert row["library_fingerprint"]
+        arm = row["arm"]
+        ref, ref_engine = _reference_arm(arm, seed, plan)
+        recs, engine, _final, _initial = adj.final_library(
+            arm, seed, fcp.learn_tasks(), limit, budget, 1
+        )
         assert row["generations"] == 1
-        assert "stop_reason" in row
-    assert data["scale"] == "reduced"
+        assert row["library_fingerprint"] == adj.fingerprint(ref_engine.record())
+        expected = rcc.STOP_REASON if rcc._stops(ref[-1]) else rcc.LIMIT_REASON
+        assert row["stop_reason"] == expected
+        assert [adj.fingerprint(r) for r in recs] == [adj.fingerprint(r) for r in ref]
+        assert recs[-1]["transmission"]["library_digest"] == rca.library_digest(engine)
 
 
 class _FakeRun:
