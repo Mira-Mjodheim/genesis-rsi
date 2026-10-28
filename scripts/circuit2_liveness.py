@@ -11,13 +11,21 @@ for _chemin in (_RACINE, _RACINE / "scripts"):
         sys.path.insert(0, str(_chemin))
 
 
+def _parents(chemin):
+    parties = chemin.split(".")
+    return {".".join(parties[:i]) for i in range(1, len(parties) + 1)}
+
+
 def _charger(nom):
     for prefixe in ("", "genesis.", "scripts.", "src.genesis.", "src."):
+        essai = prefixe + nom
         try:
-            return importlib.import_module(prefixe + nom)
-        except ModuleNotFoundError:
-            continue
-    raise ModuleNotFoundError(nom)
+            return importlib.import_module(essai)
+        except ModuleNotFoundError as exc:
+            if exc.name in _parents(essai):
+                continue
+            raise
+    raise ModuleNotFoundError(nom, name=nom)
 
 
 cp = _charger("circuit_procedure")
@@ -38,12 +46,11 @@ def _famille(t):
 
 def _valider(p, nom, violations):
     try:
-        res = cp.validate(p)
-    except Exception as exc:
-        violations.append(f"validate lève sur {nom} : {exc}")
-        return
-    if res is False:
-        violations.append(f"validate refuse {nom}")
+        cp.validate(p)
+    except cp.ProcedureError as exc:
+        violations.append(f"validate refuse {nom} : {exc}")
+        return False
+    return True
 
 
 def _verifier_run(p, traits, nom, violations):
@@ -64,24 +71,28 @@ def diagnose(seed=0, mutations=20, runs=20, randoms=3):
     rng = random.Random(f"liveness|{seed}")
     violations = []
     courant = cp.seed_procedure()
-    procs = [("départ", courant)]
+    procs = []
     mutations_done = 0
-    for i in range(mutations):
-        avant = _record_json(courant)
-        nouveau = cp.mutate(courant, rng)
-        if _record_json(courant) != avant:
-            violations.append(f"mutate modifie son entrée (étape {i})")
-        if nouveau is None:
-            continue
-        _valider(nouveau, f"mutée {i}", violations)
-        mutations_done += 1
-        procs.append((f"mutée {i}", nouveau))
-        courant = nouveau
+    if _valider(courant, "départ", violations):
+        procs.append(("départ", courant))
+        for i in range(mutations):
+            avant = _record_json(courant)
+            nouveau = cp.mutate(courant, rng)
+            if _record_json(courant) != avant:
+                violations.append(f"mutate modifie son entrée (étape {i})")
+            if nouveau is None:
+                continue
+            if not _valider(nouveau, f"mutée {i}", violations):
+                continue
+            mutations_done += 1
+            procs.append((f"mutée {i}", nouveau))
+            courant = nouveau
     randoms_done = 0
     for j in range(randoms):
         n = rng.randint(0, cp.MAX_STEPS)
         q = cp.random_procedure(rng, n)
-        _valider(q, f"aléatoire {j}", violations)
+        if not _valider(q, f"aléatoire {j}", violations):
+            continue
         randoms_done += 1
         procs.append((f"aléatoire {j}", q))
     nb_traits = len(cp.TRAITS)
@@ -113,6 +124,11 @@ def diagnose(seed=0, mutations=20, runs=20, randoms=3):
     hors = [f for f in familles if f not in {str(x) for x in tasks.LEARN}]
     if hors:
         violations.append(f"familles hors LEARN : {hors}")
+    if not taches:
+        violations.append("suite circuit2 vide")
+    manquantes = sorted({str(x) for x in tasks.LEARN} - set(familles))
+    if manquantes:
+        violations.append(f"familles LEARN absentes : {manquantes}")
     return {
         "seed": seed,
         "mutations_done": mutations_done,
