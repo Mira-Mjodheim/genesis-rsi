@@ -1,4 +1,10 @@
-"""Diagnostic de vivacité du chemin circuit2 : aucune tâche n'est résolue."""
+"""Diagnostic de vivacité du chemin circuit2 : aucune tâche n'est résolue.
+
+Le diagnostic ne lit que les tâches d'apprentissage de CIRCUIT1 (familles de
+tasks.LEARN, obtenues famille par famille via tasks.tasks). Il n'appelle jamais
+_circuit2_assignment, ne construit aucune famille HELD_OUT ni CONTROL, et
+n'établit rien sur la génération CIRCUIT2 elle-même.
+"""
 import importlib
 import json
 import random
@@ -118,8 +124,10 @@ def diagnose(seed=0, mutations=20, runs=20, randoms=3):
             roundtrips_ok += 1
         else:
             violations.append(f"aller-retour en échec sur {nom}")
-    suite = tasks.circuit2_suite(tuple(tasks.LEARN), seed)
-    taches = list(suite.values()) if isinstance(suite, dict) else list(suite)
+    taches = []
+    for famille in tasks.LEARN:
+        suite = tasks.tasks(famille, seed)
+        taches.extend(suite.values() if isinstance(suite, dict) else suite)
     familles = sorted({str(f) for f in map(_famille, taches) if f is not None})
     hors = [f for f in familles if f not in {str(x) for x in tasks.LEARN}]
     if hors:
