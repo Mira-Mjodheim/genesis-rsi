@@ -214,6 +214,7 @@ def test_a_parent_is_kept_when_no_candidate_is_strictly_better():
 
 
 def test_a_candidate_is_adopted_only_when_strictly_better():
+    """Invariant check over a real run; adoption itself is required by the controlled-fixture test below."""
     states = _run(4)
     for before, after in zip(states, states[1:]):
         if after["adopted"]:
