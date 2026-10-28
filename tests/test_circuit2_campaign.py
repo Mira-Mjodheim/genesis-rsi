@@ -425,3 +425,31 @@ def test_persistent_run_equals_the_run_arm_trajectory(sealed, arm):
     run = campaign.run_until_stop(arm, seed, learn, REAL_GENERATIONS, limit, budget)
     reference = campaign.arms.run_arm(arm, seed, learn, run["generations_run"], limit, budget)
     assert run["generations"] == reference["generations"]
+
+
+@pytest.mark.parametrize("parent_score, candidate_score", [([3, -50], [5, -40]), (None, [5, -40]), ([3, -50], None), (None, None)])
+def test_inherited_lineage_publishes_the_parent_score_and_the_candidate_selection_score(sealed, monkeypatch, parent_score, candidate_score):
+    """Fixture contrôlée, sans prétention de mesure : lineage.step est factice, parent_score != score."""
+    def fake_step(state, learn, budget, meter, rng):
+        body = {key: copy.deepcopy(value) for key, value in state.items() if key != "digest"}
+        body["index"] += 1
+        body["spent"] = {"procedure": 1, "synthesis": 2, "evaluations": 3}
+        body["exhausted"] = False
+        body["parent_score"] = parent_score
+        body["score"] = candidate_score
+        meter.charge(6)
+        return campaign.arms.lineage._seal(body, state.engine)
+
+    monkeypatch.setattr(campaign.arms.lineage, "step", fake_step)
+    seed, learn, limit, budget = _real_args(sealed)
+    run = campaign.new_run("inherited_lineage", seed, learn, 100, budget)
+    record = run.step()
+    assert record["score"] == parent_score
+    assert record["selection_score"] == candidate_score
+    if parent_score is not None:
+        assert record["score"] is not run.state["parent_score"]
+    if candidate_score is not None:
+        assert record["selection_score"] is not run.state["score"]
+    assert record["spend"] == {"procedure": 1, "synthesis": 2, "evaluations": 3}
+    assert record["exhausted"] is False
+    assert record["spent"] == sum(record["spend"].values()) == 6

@@ -21,6 +21,8 @@ pas déductible : rien n'est supposé ni tronqué. Les bras et les graines sont 
 Champs ajoutés à chaque exécution : stopped_early (la règle a joué), stop_reason
 ('exhausted_without_adoption' ou 'generation_limit') et generations_run, égal au nombre
 de générations réellement exécutées (nombre de appels à step()).
+Champs de score d'une génération : score = bibliothèque transmise (parent_score) et selection_score =
+score de la procédure candidate (state["score"]) pour inherited_lineage ; None pour les trois autres bras.
 """
 from __future__ import annotations
 
@@ -122,8 +124,8 @@ class ArmRun:
             self.state = arms.lineage.step(self.state, self.tasks, self.budget, meter, random.Random(f"meta|{self.seed}|{index}"))
             spend = self.state["spent"]
             exhausted = self.state["exhausted"]
-            score = self.state["parent_score"]
-            selection = score
+            score = None if self.state["parent_score"] is None else list(self.state["parent_score"])
+            selection = None if self.state["score"] is None else list(self.state["score"])
         else:
             self.engine, spend, exhausted, solutions = arms._generation(self.arm, self.engine, self.procedure, self.tasks, self.budget, meter, index)
             score = arms._score(solutions)
