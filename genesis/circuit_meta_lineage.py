@@ -29,7 +29,10 @@ Stage (b), choices documented here (fixed by this module, not frozen by any prot
   of stage (a). A candidate whose evaluation ran out of meter is not scored. The best candidate is
   adopted only if its score is strictly above the parent's; otherwise the parent is handed on unchanged.
 - when the meter runs out, work stops, nothing is exceeded and the record says exhausted=True.
-  When stage (a) is exhausted, stage (b) is skipped (the parent's score would be incomplete).
+  A score coming from an exhausted evaluation is partial and is never compared, whether it is the parent's or a candidate's.
+  When stage (a) is exhausted, stage (b) is skipped: no candidate is drawn, evaluated or charged for the selection,
+  the share META_RESERVE_DIVISOR set aside for stage (b) stays unused, and the parent is handed on unchanged
+  (adopted=False, evaluated=[], exhausted=True, score == parent_score == the parent's score).
 
 The baseline evaluation of the current library (stage a, before improved_by) is metered too: it runs
 through engine._metered_attempt under the same meter and its evaluations are counted in the post
@@ -283,6 +286,12 @@ def step(state, tasks, task_budget, meter, rng):
     Asymmetry: the parent is evaluated (stage a) on the whole meter, each candidate only on a share
     of what remains. The comparison is therefore conservative against the candidates: a candidate is
     adopted only if it beats the parent despite the smaller budget.
+
+    A score coming from an exhausted evaluation is partial, hence never comparable. If stage (a) is
+    exhausted, stage (b) is skipped: no candidate is drawn, evaluated or charged for the selection, the
+    reserve of stage (b) stays unused and the parent is handed on unchanged (adopted=False, evaluated=[],
+    exhausted=True, score == parent_score == the parent's score). Symmetrically, a candidate whose
+    evaluation is exhausted is not scored and cannot be adopted, even if its partial score beats the parent's.
     """
     learn = _learn_tasks(tasks)
     _count("task_budget", task_budget)
@@ -322,7 +331,7 @@ def step(state, tasks, task_budget, meter, rng):
     parent_score = _score(after)
     chosen, chosen_score, evaluated = parent, parent_score, []
     outcomes = _outcomes(info, engine.measure(baseline))
-    lot = _lot(parent, state["procedure"]["procedure_digest"], rng)
+    lot = {} if exhausted else _lot(parent, state["procedure"]["procedure_digest"], rng)
     admitted = []
     for digest, (candidate, composed, draws) in lot.items():
         # Support of a candidate procedure = its right calls on the observed components (evidence),
