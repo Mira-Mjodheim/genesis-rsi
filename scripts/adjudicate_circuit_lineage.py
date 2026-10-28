@@ -78,34 +78,74 @@ def stop_reason(records):
     return rcc.LIMIT_REASON
 
 
-def verify_executables(manifest_path=None, root=ROOT):
-    """Vérifie les exécutables gelés contre le manifeste d'empreintes.
-
-    PlanError si le manifeste est absent ou illisible, ou si un fichier listé
-    est absent ou d'empreinte différente. Aucun calcul ni lecture de HELD_OUT.
-    """
-    path = Path(manifest_path) if manifest_path is not None else fce.MANIFEST_PATH
-    root = Path(root)
+def _read_manifest(path, label):
+    """Contenu JSON d'un manifeste ; PlanError si absent ou illisible."""
     try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(Path(path).read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise PlanError(f"manifeste d'exécutables absent : {path}") from exc
+        raise PlanError(f"manifeste d'exécutables {label} absent : {path}") from exc
     except (OSError, ValueError) as exc:
-        raise PlanError(f"manifeste d'exécutables illisible : {exc}") from exc
+        raise PlanError(f"manifeste d'exécutables {label} illisible : {exc}") from exc
+
+
+def _manifest_files(manifest):
+    """Empreintes d'un manifeste valide ; PlanError sinon."""
     files = manifest.get("files") if isinstance(manifest, dict) else None
     if not isinstance(files, dict) or not files:
         raise PlanError("manifeste d'exécutables sans fichiers listés")
     if manifest.get("digest") != fce.global_digest(files):
         raise PlanError("digest global du manifeste d'exécutables invalide")
     for rel in sorted(files):
-        expected = files[rel]
-        if not isinstance(expected, str) or Path(rel).is_absolute() or ".." in Path(rel).parts:
+        if not isinstance(files[rel], str) or Path(rel).is_absolute() or ".." in Path(rel).parts:
             raise PlanError(f"entrée invalide dans le manifeste : {rel}")
+    return files
+
+
+def verify_executables(manifest_path=None, root=ROOT, canonical_path=None, required=None):
+    """Vérifie les exécutables gelés contre le manifeste canonique d'empreintes.
+
+    Les défauts sont résolus à l'appel : canonical_path = fce.MANIFEST_PATH et
+    required = fce.EXECUTABLES. Ordre des contrôles :
+    a. le manifeste canonique est chargé et validé (absent, illisible ou
+       invalide => PlanError) ;
+    b. ses fichiers listés doivent être exactement ceux de `required` ;
+    c. un manifeste `manifest_path` distinct du canonique n'est admis que s'il
+       en est une copie conforme (contenu JSON égal), jamais comme source
+       d'empreintes ;
+    d. chaque fichier de `root` est comparé aux empreintes canoniques.
+    Aucun calcul ni lecture de HELD_OUT.
+
+    Le manifeste canonique officiel (experiment/engine/CIRCUIT2/EXECUTABLES.json)
+    n'existe pas encore : il sera créé après fusion par
+    scripts/freeze_circuit2_executables.py (action run), depuis main, dans un
+    changement séparé. Tant qu'il est absent, le lancement réel est refusé, ce
+    qui est voulu.
+    """
+    if canonical_path is None:
+        canonical_path = fce.MANIFEST_PATH
+    if required is None:
+        required = fce.EXECUTABLES
+    canonical_path = Path(canonical_path)
+    root = Path(root)
+    canonical = _read_manifest(canonical_path, "canonique")
+    files = _manifest_files(canonical)
+    if set(files) != set(required):
+        missing = sorted(set(required) - set(files))
+        extra = sorted(set(files) - set(required))
+        raise PlanError(
+            "manifeste canonique non conforme à la liste attendue : "
+            f"manque {missing}, surplus {extra}"
+        )
+    if manifest_path is not None and Path(manifest_path) != canonical_path:
+        provided = _read_manifest(manifest_path, "fourni")
+        if provided != canonical:
+            raise PlanError("manifeste fourni différent du manifeste canonique")
+    for rel in sorted(files):
         try:
             actual = fce.file_sha256(root / rel)
         except OSError as exc:
             raise PlanError(f"exécutable absent ou illisible : {rel}") from exc
-        if actual != expected:
+        if actual != files[rel]:
             raise PlanError(f"exécutable altéré : {rel}")
 
 

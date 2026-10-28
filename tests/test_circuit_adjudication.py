@@ -175,12 +175,14 @@ def _integrity_tree(tmp_path):
     return root, manifest, rels
 
 
-def _bind_root(monkeypatch, root):
-    """Vérification réelle, mais relative à `root` (faux exécutables)."""
+def _bind_root(monkeypatch, root, manifest, rels):
+    """Vérification réelle, relative à `root` (faux exécutables) et au canonique `manifest`."""
     monkeypatch.setattr(
         adj,
         "verify_executables",
-        lambda manifest_path=None, root_arg=None: _REAL_VERIFY(manifest_path, root=root),
+        lambda manifest_path=None, root_arg=None: _REAL_VERIFY(
+            manifest_path, root=root, canonical_path=manifest, required=rels
+        ),
     )
 
 
@@ -188,34 +190,45 @@ def test_integrity_valid_manifest_accepted(real_integrity, tmp_path):
     root, manifest, rels = _integrity_tree(tmp_path)
     data = json.loads(manifest.read_text(encoding="utf-8"))
     assert sorted(data["files"]) == sorted(rels)
-    assert adj.verify_executables(manifest, root=root) is None
+    result = adj.verify_executables(
+        manifest, root=root, canonical_path=manifest, required=rels
+    )
+    assert result is None
 
 
 def test_integrity_altered_file_refused(real_integrity, tmp_path):
     root, manifest, rels = _integrity_tree(tmp_path)
     (root / rels[0]).write_bytes(b"altere\n")
     with pytest.raises(adj.PlanError):
-        adj.verify_executables(manifest, root=root)
+        adj.verify_executables(
+            manifest, root=root, canonical_path=manifest, required=rels
+        )
 
 
 def test_integrity_missing_file_refused(real_integrity, tmp_path):
     root, manifest, rels = _integrity_tree(tmp_path)
     (root / rels[1]).unlink()
     with pytest.raises(adj.PlanError):
-        adj.verify_executables(manifest, root=root)
+        adj.verify_executables(
+            manifest, root=root, canonical_path=manifest, required=rels
+        )
 
 
 def test_integrity_absent_manifest_refused(real_integrity, tmp_path):
-    root, _manifest, _rels = _integrity_tree(tmp_path)
+    root, manifest, rels = _integrity_tree(tmp_path)
     with pytest.raises(adj.PlanError):
-        adj.verify_executables(tmp_path / "absent.json", root=root)
+        adj.verify_executables(
+            tmp_path / "absent.json", root=root, canonical_path=manifest, required=rels
+        )
 
 
 def test_integrity_unreadable_manifest_refused(real_integrity, tmp_path):
-    root, manifest, _rels = _integrity_tree(tmp_path)
+    root, manifest, rels = _integrity_tree(tmp_path)
     manifest.write_text("{pas du json", encoding="utf-8")
     with pytest.raises(adj.PlanError):
-        adj.verify_executables(manifest, root=root)
+        adj.verify_executables(
+            manifest, root=root, canonical_path=manifest, required=rels
+        )
 
 
 def test_freeze_executables_refuses_overwrite_and_missing(tmp_path):
@@ -231,7 +244,7 @@ def test_freeze_executables_refuses_overwrite_and_missing(tmp_path):
 def test_main_refuses_altered_executable_without_computing(monkeypatch, capsys, tmp_path):
     root, manifest, rels = _integrity_tree(tmp_path)
     (root / rels[0]).write_bytes(b"altere\n")
-    _bind_root(monkeypatch, root)
+    _bind_root(monkeypatch, root, manifest, rels)
 
     def forbidden(*args, **kwargs):
         raise AssertionError("aucun calcul attendu en cas de refus")
@@ -248,8 +261,8 @@ def test_main_refuses_altered_executable_without_computing(monkeypatch, capsys, 
 
 
 def test_main_accepts_valid_executables(monkeypatch, tmp_path):
-    root, manifest, _rels = _integrity_tree(tmp_path)
-    _bind_root(monkeypatch, root)
+    root, manifest, rels = _integrity_tree(tmp_path)
+    _bind_root(monkeypatch, root, manifest, rels)
     _use_stubs(monkeypatch)
     out = _results_tmp()
     seed = str(_plan()["seeds"][0])
@@ -263,12 +276,124 @@ def test_main_accepts_valid_executables(monkeypatch, tmp_path):
 def test_measure_held_out_refuses_altered_executables_before_held_out(monkeypatch, tmp_path):
     root, manifest, rels = _integrity_tree(tmp_path)
     (root / rels[0]).write_bytes(b"altere\n")
-    _bind_root(monkeypatch, root)
+    _bind_root(monkeypatch, root, manifest, rels)
     _guard(monkeypatch)
     with pytest.raises(adj.PlanError):
         adj.measure_held_out(ce.Engine(), None, manifest)
     with pytest.raises(adj.PlanError):
         adj.measure_held_out(ce.Engine(), None, tmp_path / "absent.json")
+
+
+def test_integrity_incomplete_manifest_refused(real_integrity, tmp_path):
+    root, _manifest, rels = _integrity_tree(tmp_path)
+    sans_rapport = "scripts/sans_rapport.py"
+    (root / sans_rapport).write_bytes(b"sans rapport\n")
+    incomplet = tmp_path / "incomplet.json"
+    fce.write_manifest(incomplet, root=root, paths=[sans_rapport])
+    with pytest.raises(adj.PlanError):
+        adj.verify_executables(
+            incomplet, root=root, canonical_path=incomplet, required=rels
+        )
+    surplus = tmp_path / "surplus.json"
+    fce.write_manifest(surplus, root=root, paths=rels + [sans_rapport])
+    with pytest.raises(adj.PlanError):
+        adj.verify_executables(
+            surplus, root=root, canonical_path=surplus, required=rels
+        )
+
+
+def test_integrity_recomputed_manifest_after_alteration_refused(real_integrity, tmp_path):
+    root, manifest, rels = _integrity_tree(tmp_path)
+    (root / rels[0]).write_bytes(b"altere\n")
+    recalcule = tmp_path / "recalcule.json"
+    fce.write_manifest(recalcule, root=root, paths=rels)
+    with pytest.raises(adj.PlanError, match="différent du manifeste canonique"):
+        adj.verify_executables(
+            recalcule, root=root, canonical_path=manifest, required=rels
+        )
+
+
+def test_integrity_conforming_copy_accepted(real_integrity, tmp_path):
+    root, manifest, rels = _integrity_tree(tmp_path)
+    copie = tmp_path / "copie.json"
+    copie.write_bytes(manifest.read_bytes())
+    result = adj.verify_executables(
+        copie, root=root, canonical_path=manifest, required=rels
+    )
+    assert result is None
+
+
+def _real_canonical(tmp_path):
+    """Manifeste canonique des vrais exécutables, écrit hors du dépôt."""
+    canon = tmp_path / "canon.json"
+    fce.write_manifest(canon, root=ROOT, paths=fce.EXECUTABLES)
+    return canon
+
+
+def test_integrity_real_files_conforming_copy_accepted(real_integrity, tmp_path):
+    canon = _real_canonical(tmp_path)
+    copie = tmp_path / "copie.json"
+    copie.write_bytes(canon.read_bytes())
+    assert adj.verify_executables(copie, canonical_path=canon) is None
+
+
+def test_integrity_real_files_modified_copy_refused(real_integrity, tmp_path):
+    canon = _real_canonical(tmp_path)
+    data = json.loads(canon.read_text(encoding="utf-8"))
+    rel = sorted(data["files"])[0]
+    data["files"][rel] = "0" * 64
+    data["digest"] = fce.global_digest(data["files"])
+    modifie = tmp_path / "modifie.json"
+    modifie.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(adj.PlanError, match="différent du manifeste canonique"):
+        adj.verify_executables(modifie, canonical_path=canon)
+
+
+def _forbid_compute(monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("aucun calcul attendu en cas de refus")
+
+    monkeypatch.setattr(adj, "final_library", forbidden)
+    monkeypatch.setattr(adj, "measure_held_out", forbidden)
+
+
+def test_main_with_canonical_manifest_returns_zero(real_integrity, monkeypatch, tmp_path):
+    canon = _real_canonical(tmp_path)
+    monkeypatch.setattr(fce, "MANIFEST_PATH", canon)
+    _use_stubs(monkeypatch)
+    out = _results_tmp()
+    seed = str(_plan()["seeds"][0])
+    try:
+        assert adj.main(["--seeds", seed, "--out", str(out)]) == 0
+    finally:
+        out.unlink(missing_ok=True)
+
+
+def test_main_refuses_without_canonical_manifest(real_integrity, monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(fce, "MANIFEST_PATH", tmp_path / "absent.json")
+    _forbid_compute(monkeypatch)
+    out = _results_tmp()
+    seed = str(_plan()["seeds"][0])
+    try:
+        _assert_refused(capsys, out, ["--seeds", seed, "--out", str(out)])
+    finally:
+        out.unlink(missing_ok=True)
+
+
+def test_main_refuses_recomputed_manifest_without_computing(monkeypatch, capsys, tmp_path):
+    root, manifest, rels = _integrity_tree(tmp_path)
+    (root / rels[0]).write_bytes(b"altere\n")
+    recalcule = tmp_path / "recalcule.json"
+    fce.write_manifest(recalcule, root=root, paths=rels)
+    _bind_root(monkeypatch, root, manifest, rels)
+    _forbid_compute(monkeypatch)
+    out = _results_tmp()
+    seed = str(_plan()["seeds"][0])
+    argv = ["--seeds", seed, "--out", str(out), "--integrity", str(recalcule)]
+    try:
+        _assert_refused(capsys, out, argv)
+    finally:
+        out.unlink(missing_ok=True)
 
 
 def test_final_library_matches_run_arm():
