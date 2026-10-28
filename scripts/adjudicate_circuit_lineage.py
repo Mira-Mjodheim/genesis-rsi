@@ -15,6 +15,7 @@ for _p in (str(ROOT), str(ROOT / "scripts")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+import freeze_circuit2_executables as fce  # noqa: E402
 import freeze_circuit2_plan as fcp  # noqa: E402
 import run_circuit2_arms as rca  # noqa: E402
 import run_circuit2_campaign as rcc  # noqa: E402
@@ -77,18 +78,51 @@ def stop_reason(records):
     return rcc.LIMIT_REASON
 
 
-def measure_held_out(engine, plan_path=None):
+def verify_executables(manifest_path=None, root=ROOT):
+    """Vérifie les exécutables gelés contre le manifeste d'empreintes.
+
+    PlanError si le manifeste est absent ou illisible, ou si un fichier listé
+    est absent ou d'empreinte différente. Aucun calcul ni lecture de HELD_OUT.
+    """
+    path = Path(manifest_path) if manifest_path is not None else fce.MANIFEST_PATH
+    root = Path(root)
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise PlanError(f"manifeste d'exécutables absent : {path}") from exc
+    except (OSError, ValueError) as exc:
+        raise PlanError(f"manifeste d'exécutables illisible : {exc}") from exc
+    files = manifest.get("files") if isinstance(manifest, dict) else None
+    if not isinstance(files, dict) or not files:
+        raise PlanError("manifeste d'exécutables sans fichiers listés")
+    if manifest.get("digest") != fce.global_digest(files):
+        raise PlanError("digest global du manifeste d'exécutables invalide")
+    for rel in sorted(files):
+        expected = files[rel]
+        if not isinstance(expected, str) or Path(rel).is_absolute() or ".." in Path(rel).parts:
+            raise PlanError(f"entrée invalide dans le manifeste : {rel}")
+        try:
+            actual = fce.file_sha256(root / rel)
+        except OSError as exc:
+            raise PlanError(f"exécutable absent ou illisible : {rel}") from exc
+        if actual != expected:
+            raise PlanError(f"exécutable altéré : {rel}")
+
+
+def measure_held_out(engine, plan_path=None, integrity=None):
     """Rendement held-out de `engine` après vérification du plan gelé.
 
     Le plan est lu et vérifié (freeze_circuit2_plan.verify_plan) avant toute
     construction de la suite HELD_OUT ; absent, illisible ou invalide => PlanError.
     Toute la suite circuit2_suite(HELD_OUT) est évaluée avec le task_budget du
     plan, sans filtre sur le nombre d'entrées.
+    Les exécutables sont vérifiés (verify_executables) juste après le plan.
     """
     path = Path(plan_path) if plan_path is not None else DEFAULT_PLAN
     try:
         plan = load_plan(path)
         fcp.verify_plan(plan)
+        verify_executables(integrity)
         task_budget = plan["budgets"]["task_budget"]
     except PlanError:
         raise
@@ -148,6 +182,7 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     ap.add_argument("--plan", default=None)
     ap.add_argument("--arms", nargs="+", default=None)
+    ap.add_argument("--integrity", default=None)
     args = ap.parse_args(argv)
     out = Path(args.out).resolve()
     if (ROOT / "results").resolve() not in out.parents:
@@ -156,6 +191,7 @@ def main(argv=None):
     try:
         plan = load_plan(plan_path)
         fcp.verify_plan(plan)
+        verify_executables(args.integrity)
         arms = list(args.arms) if args.arms is not None else list(rca.ARMS)
         message = _validate_request(plan, args.seeds, args.generations, arms)
     except PlanError as exc:
@@ -179,7 +215,7 @@ def main(argv=None):
                 "arm": arm,
                 "seed": seed,
                 "generations": len(records),
-                "held_out_yield": measure_held_out(engine, plan_path),
+                "held_out_yield": measure_held_out(engine, plan_path, args.integrity),
                 "library_fingerprint": fingerprint(engine.record()),
             }
             row["stop_reason"] = stop_reason(records)

@@ -13,6 +13,7 @@ for _p in (str(ROOT), str(ROOT / "scripts")):
         sys.path.insert(0, _p)
 
 import adjudicate_circuit_lineage as adj  # noqa: E402
+import freeze_circuit2_executables as fce  # noqa: E402
 import freeze_circuit2_plan as fcp  # noqa: E402
 import run_circuit2_arms as rca  # noqa: E402
 import run_circuit2_campaign as rcc  # noqa: E402
@@ -22,6 +23,21 @@ from genesis import circuit_tasks as ct  # noqa: E402
 
 def _plan():
     return adj.load_plan(adj.DEFAULT_PLAN)
+
+
+_REAL_VERIFY = adj.verify_executables
+
+
+@pytest.fixture(autouse=True)
+def _neutralize_integrity(monkeypatch):
+    """Le manifeste officiel n'existe pas encore : vérification neutralisée par défaut."""
+    monkeypatch.setattr(adj, "verify_executables", lambda *args, **kwargs: None)
+
+
+@pytest.fixture
+def real_integrity(monkeypatch):
+    """Rétablit la vérification réelle pour les tests d'intégrité."""
+    monkeypatch.setattr(adj, "verify_executables", _REAL_VERIFY)
 
 
 def _tasks(n=5):
@@ -146,6 +162,115 @@ def test_altered_plan_raises_before_held_out(monkeypatch, tmp_path):
         adj.measure_held_out(ce.Engine(), path)
 
 
+def _integrity_tree(tmp_path):
+    """Faux exécutables et manifeste généré par le script de gel."""
+    root = tmp_path / "racine"
+    rels = ["scripts/un.py", "genesis/deux.py"]
+    for index, rel in enumerate(rels):
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(f"contenu factice {index}\n".encode("utf-8"))
+    manifest = tmp_path / "EXECUTABLES.json"
+    fce.write_manifest(manifest, root=root, paths=rels)
+    return root, manifest, rels
+
+
+def _bind_root(monkeypatch, root):
+    """Vérification réelle, mais relative à `root` (faux exécutables)."""
+    monkeypatch.setattr(
+        adj,
+        "verify_executables",
+        lambda manifest_path=None, root_arg=None: _REAL_VERIFY(manifest_path, root=root),
+    )
+
+
+def test_integrity_valid_manifest_accepted(real_integrity, tmp_path):
+    root, manifest, rels = _integrity_tree(tmp_path)
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    assert sorted(data["files"]) == sorted(rels)
+    assert adj.verify_executables(manifest, root=root) is None
+
+
+def test_integrity_altered_file_refused(real_integrity, tmp_path):
+    root, manifest, rels = _integrity_tree(tmp_path)
+    (root / rels[0]).write_bytes(b"altere\n")
+    with pytest.raises(adj.PlanError):
+        adj.verify_executables(manifest, root=root)
+
+
+def test_integrity_missing_file_refused(real_integrity, tmp_path):
+    root, manifest, rels = _integrity_tree(tmp_path)
+    (root / rels[1]).unlink()
+    with pytest.raises(adj.PlanError):
+        adj.verify_executables(manifest, root=root)
+
+
+def test_integrity_absent_manifest_refused(real_integrity, tmp_path):
+    root, _manifest, _rels = _integrity_tree(tmp_path)
+    with pytest.raises(adj.PlanError):
+        adj.verify_executables(tmp_path / "absent.json", root=root)
+
+
+def test_integrity_unreadable_manifest_refused(real_integrity, tmp_path):
+    root, manifest, _rels = _integrity_tree(tmp_path)
+    manifest.write_text("{pas du json", encoding="utf-8")
+    with pytest.raises(adj.PlanError):
+        adj.verify_executables(manifest, root=root)
+
+
+def test_freeze_executables_refuses_overwrite_and_missing(tmp_path):
+    root, manifest, rels = _integrity_tree(tmp_path)
+    with pytest.raises(FileExistsError):
+        fce.write_manifest(manifest, root=root, paths=rels)
+    autre = tmp_path / "autre.json"
+    with pytest.raises(FileNotFoundError):
+        fce.write_manifest(autre, root=root, paths=rels + ["absent.py"])
+    assert not autre.exists()
+
+
+def test_main_refuses_altered_executable_without_computing(monkeypatch, capsys, tmp_path):
+    root, manifest, rels = _integrity_tree(tmp_path)
+    (root / rels[0]).write_bytes(b"altere\n")
+    _bind_root(monkeypatch, root)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("aucun calcul attendu en cas de refus")
+
+    monkeypatch.setattr(adj, "final_library", forbidden)
+    monkeypatch.setattr(adj, "measure_held_out", forbidden)
+    out = _results_tmp()
+    seed = str(_plan()["seeds"][0])
+    argv = ["--seeds", seed, "--out", str(out), "--integrity", str(manifest)]
+    try:
+        _assert_refused(capsys, out, argv)
+    finally:
+        out.unlink(missing_ok=True)
+
+
+def test_main_accepts_valid_executables(monkeypatch, tmp_path):
+    root, manifest, _rels = _integrity_tree(tmp_path)
+    _bind_root(monkeypatch, root)
+    _use_stubs(monkeypatch)
+    out = _results_tmp()
+    seed = str(_plan()["seeds"][0])
+    argv = ["--seeds", seed, "--out", str(out), "--integrity", str(manifest)]
+    try:
+        assert adj.main(argv) == 0
+    finally:
+        out.unlink(missing_ok=True)
+
+
+def test_measure_held_out_refuses_altered_executables_before_held_out(monkeypatch, tmp_path):
+    root, manifest, rels = _integrity_tree(tmp_path)
+    (root / rels[0]).write_bytes(b"altere\n")
+    _bind_root(monkeypatch, root)
+    _guard(monkeypatch)
+    with pytest.raises(adj.PlanError):
+        adj.measure_held_out(ce.Engine(), None, manifest)
+    with pytest.raises(adj.PlanError):
+        adj.measure_held_out(ce.Engine(), None, tmp_path / "absent.json")
+
+
 def test_final_library_matches_run_arm():
     plan = _plan()
     tasks = fcp.learn_tasks()
@@ -181,7 +306,7 @@ def _stub_final_library(arm, seed, tasks, limit, budget, generations):
     return records, ce.Engine(), None, None
 
 
-def _stub_measure_held_out(engine, plan_path=None):
+def _stub_measure_held_out(engine, plan_path=None, integrity=None):
     """Stub (non réel) : rendement fixe, sans évaluation."""
     return 0.0
 
@@ -240,7 +365,8 @@ def _reference_arm(arm, seed, plan):
     # run_arm ne renvoie pas l'Engine : relecture via un ArmRun piloté une fois.
     run = rcc.new_run(arm, seed, tasks, limit, budget)
     run.step()
-    return ref, run.engine
+    engine = run.state.engine if arm == "inherited_lineage" else run.engine
+    return ref, engine
 
 
 def test_main_four_arms_real_arm_runs(monkeypatch):
@@ -279,6 +405,7 @@ def test_main_four_arms_real_arm_runs(monkeypatch):
         )
         assert row["generations"] == 1
         assert row["library_fingerprint"] == adj.fingerprint(ref_engine.record())
+        assert rca.library_digest(ref_engine) == ref[-1]["transmission"]["library_digest"]
         expected = rcc.STOP_REASON if rcc._stops(ref[-1]) else rcc.LIMIT_REASON
         assert row["stop_reason"] == expected
         assert [adj.fingerprint(r) for r in recs] == [adj.fingerprint(r) for r in ref]
