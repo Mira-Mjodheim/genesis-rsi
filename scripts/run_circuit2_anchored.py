@@ -1,23 +1,33 @@
 """Lanceur CIRCUIT2 ancré : vérifie l'empreinte SHA-256 du sceau approuvé avant toute génération.
 
 Ce script n'est pas scellé. Le lanceur scellé (run_circuit2_campaign.py) est appelé
-inchangé. L'empreinte approuvée n'est jamais lue sur la ligne de commande : elle vient
-d'un fichier d'approbation hôte, dont le chemin est donné par la variable d'environnement
-GENESIS_HOST_APPROVALS (JSON {"circuit2_launcher_seal_sha256": "<64 hex minuscules>"}).
+inchangé, mais plus importé au niveau du module : importlib ne le charge qu'une fois les
+contrôles passés. Avant tout import du code candidat, le script lit en octets et hache le
+lanceur, le vérificateur seal_circuit2_launcher.py et le sceau, puis compare ces empreintes
+à celles du fichier d'approbation hôte. L'empreinte approuvée n'est jamais lue sur la ligne
+de commande : elle vient de ce fichier, dont le chemin est donné par la variable
+d'environnement GENESIS_HOST_APPROVALS (JSON avec les clés circuit2_launcher_seal_sha256,
+circuit2_launcher_sha256, circuit2_verifier_sha256, empreintes de 64 hex minuscules, et
+circuit2_launcher_seal_path, chemin du sceau approuvé).
 Tout ce qui vit dans le dépôt pouvant être modifié conjointement par un candidat, ce
-fichier doit se trouver hors de la racine du dépôt et n'être inscriptible ni par le groupe
-ni par les autres. Cette séparation dépend de la configuration de l'hôte ; le dépôt ne la
-prouve pas. Refus (code 2) avant toute génération, sans sortie standard et sans fichier
---out, si la variable est absente, si le fichier est illisible, mal formé, situé dans le
-dépôt ou modifiable par le groupe ou les autres, si l'empreinte est mal formée ou différente
-de celle du sceau courant, si --approved-seal-sha256 est passé en ligne de commande ou si
---out existe déjà.
+fichier doit se trouver hors de la racine du dépôt, n'être inscriptible ni par le groupe ni
+par les autres, et appartenir à root ou à un autre uid que l'uid courant. L'indépendance de
+l'approbation dépend de la configuration de l'hôte ; le dépôt ne la prouve pas. Sous root,
+un fichier appartenant à root est accepté par cette règle. Les autres modules importés par
+le lanceur ne sont pas couverts par ces empreintes.
+Refus (code 2) avant toute génération et avant tout import du module de campagne, sans
+sortie standard et sans fichier --out, si la variable est absente, si le fichier est
+illisible, mal formé, situé dans le dépôt, modifiable par le groupe ou les autres ou
+possédé par l'uid courant (non root), si une empreinte diffère, si le module chargé n'est
+pas le lanceur haché ou n'utilise pas le sceau approuvé, si --approved-seal-sha256 est
+passé en ligne de commande ou si --out existe déjà.
 """
 from __future__ import annotations
 
 import argparse
 import contextlib
 import hashlib
+import importlib
 import io
 import json
 import os
@@ -25,12 +35,15 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import run_circuit2_campaign as campaign  # noqa: E402
-
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 ENV_VAR = "GENESIS_HOST_APPROVALS"
 APPROVAL_KEY = "circuit2_launcher_seal_sha256"
+LAUNCHER_KEY = "circuit2_launcher_sha256"
+VERIFIER_KEY = "circuit2_verifier_sha256"
+SEAL_PATH_KEY = "circuit2_launcher_seal_path"
+LAUNCHER_NAME = "run_circuit2_campaign.py"
+VERIFIER_NAME = "seal_circuit2_launcher.py"
+SCRIPTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -38,16 +51,26 @@ class AnchorError(Exception):
     """Approbation hôte absente, non fiable, mal formée ou différente de l'empreinte du sceau."""
 
 
-def seal_sha256() -> str:
-    """Empreinte SHA-256 des octets du fichier de sceau courant."""
+def _current_uid() -> int:
+    """uid effectif du processus courant ; isolé pour pouvoir être simulé par les tests unitaires."""
+    return os.geteuid()
+
+
+def _sha256_of(path: Path, label: str) -> str:
+    """Empreinte SHA-256 des octets du fichier ; lève AnchorError s'il est illisible."""
     try:
-        return hashlib.sha256(Path(campaign.SEAL_PATH).read_bytes()).hexdigest()
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
     except OSError as exc:
-        raise AnchorError(f"sceau illisible : {exc}") from exc
+        raise AnchorError(f"{label} illisible : {exc}") from exc
 
 
-def load_host_approval() -> tuple[str, Path]:
-    """Lit l'empreinte approuvée dans le fichier d'approbation hôte ; lève AnchorError s'il n'est pas fiable."""
+def load_host_approval() -> dict:
+    """Lit et valide le fichier d'approbation hôte ; lève AnchorError s'il n'est pas fiable.
+
+    Retourne file (chemin résolu), owner (uid propriétaire), seal, launcher et verifier
+    (empreintes approuvées) et seal_path (chemin résolu du sceau approuvé). Aucun module
+    candidat n'est importé ici.
+    """
     raw = os.environ.get(ENV_VAR)
     if not raw:
         raise AnchorError(f"{ENV_VAR} est requis")
@@ -58,28 +81,73 @@ def load_host_approval() -> tuple[str, Path]:
     if path.is_relative_to(REPO_ROOT.resolve()):
         raise AnchorError("le fichier d'approbation hôte ne doit pas se trouver dans le dépôt")
     try:
-        mode = path.stat().st_mode
+        info = path.stat()
     except OSError as exc:
         raise AnchorError(f"fichier d'approbation hôte illisible : {exc}") from exc
-    if mode & 0o022:
+    if info.st_mode & 0o022:
         raise AnchorError("le fichier d'approbation hôte est inscriptible par le groupe ou les autres")
     try:
         data = json.loads(path.read_bytes().decode("utf-8"))
     except (OSError, ValueError) as exc:
         raise AnchorError(f"fichier d'approbation hôte illisible ou mal formé : {exc}") from exc
-    if not isinstance(data, dict) or not isinstance(data.get(APPROVAL_KEY), str):
+    if not isinstance(data, dict):
         raise AnchorError("fichier d'approbation hôte mal formé")
-    approved = data[APPROVAL_KEY]
-    if not _HEX64.fullmatch(approved):
-        raise AnchorError("l'empreinte approuvée doit être 64 caractères hexadécimaux minuscules")
-    return approved, path
+    digests = {}
+    for name, key in (("seal", APPROVAL_KEY), ("launcher", LAUNCHER_KEY), ("verifier", VERIFIER_KEY)):
+        value = data.get(key)
+        if not isinstance(value, str) or not _HEX64.fullmatch(value):
+            raise AnchorError(f"{key} doit être 64 caractères hexadécimaux minuscules")
+        digests[name] = value
+    raw_seal = data.get(SEAL_PATH_KEY)
+    if not isinstance(raw_seal, str) or not raw_seal:
+        raise AnchorError(f"{SEAL_PATH_KEY} est requis dans le fichier d'approbation hôte")
+    seal_path = Path(raw_seal)
+    if not seal_path.is_absolute():
+        seal_path = REPO_ROOT / seal_path
+    try:
+        seal_path = seal_path.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise AnchorError(f"sceau illisible : {exc}") from exc
+    return {"file": path, "owner": info.st_uid, "seal_path": seal_path, **digests}
 
 
-def check_approved(approved: str) -> str:
-    """Compare l'empreinte approuvée à celle du fichier de sceau courant ; lève AnchorError sinon."""
-    if seal_sha256() != approved:
-        raise AnchorError("l'empreinte du sceau ne correspond pas à l'approbation hôte")
-    return approved
+def check_approved(approval: dict) -> None:
+    """Hache en octets le lanceur, le vérificateur et le sceau, compare aux empreintes approuvées, puis contrôle le propriétaire.
+
+    Les empreintes sont comparées avant le propriétaire. Rien du code candidat n'est importé ici.
+    """
+    checks = (
+        ("lanceur", SCRIPTS_DIR / LAUNCHER_NAME, approval["launcher"]),
+        ("vérificateur", SCRIPTS_DIR / VERIFIER_NAME, approval["verifier"]),
+        ("sceau", approval["seal_path"], approval["seal"]),
+    )
+    for name, path, expected in checks:
+        if _sha256_of(path, name) != expected:
+            raise AnchorError(f"l'empreinte du {name} ne correspond pas à l'approbation hôte")
+    owner = approval["owner"]
+    if owner != 0 and owner == _current_uid():
+        raise AnchorError("le propriétaire du fichier d'approbation hôte est l'uid courant ; il doit être root ou un autre uid")
+
+
+def _import_campaign(approval: dict):
+    """Importe le module de campagne (importlib) ; à n'appeler qu'après check_approved et les contrôles de --out.
+
+    Vérifie que le module chargé est le fichier haché et utilise le sceau approuvé.
+    """
+    for entry in (REPO_ROOT / "src", SCRIPTS_DIR):
+        if entry.is_dir() and str(entry) not in sys.path:
+            sys.path.insert(0, str(entry))
+    try:
+        module = importlib.import_module("run_circuit2_campaign")
+        module_file = Path(module.__file__).resolve()
+        module_seal = Path(module.SEAL_PATH).resolve()
+    except Exception as exc:
+        raise AnchorError(f"module de campagne inutilisable : {exc}") from exc
+    if module_file != (SCRIPTS_DIR / LAUNCHER_NAME).resolve():
+        raise AnchorError("le module de campagne chargé n'est pas le lanceur dont l'empreinte a été approuvée")
+    if module_seal != approval["seal_path"]:
+        raise AnchorError("le module de campagne utilise un autre sceau que celui approuvé")
+    return module
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -92,8 +160,8 @@ def main(argv: list[str] | None = None) -> int:
         print("refus : --approved-seal-sha256 n'est pas accepté en ligne de commande ; l'approbation vient du fichier désigné par GENESIS_HOST_APPROVALS", file=sys.stderr)
         return 2
     try:
-        approved, approval_file = load_host_approval()
-        check_approved(approved)
+        approval = load_host_approval()
+        check_approved(approval)
     except AnchorError as exc:
         print(f"refus : {exc}", file=sys.stderr)
         return 2
@@ -103,6 +171,11 @@ def main(argv: list[str] | None = None) -> int:
     out = Path(known.out)
     if out.exists():
         print(f"refus : {out} existe déjà", file=sys.stderr)
+        return 2
+    try:
+        campaign = _import_campaign(approval)
+    except AnchorError as exc:
+        print(f"refus : {exc}", file=sys.stderr)
         return 2
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
@@ -116,8 +189,10 @@ def main(argv: list[str] | None = None) -> int:
     if not isinstance(result, dict):
         print("refus : la sortie du lanceur n'est pas un objet JSON", file=sys.stderr)
         return 2
-    result["approved_seal_sha256"] = approved
-    result["host_approval_file"] = str(approval_file)
+    result["approved_seal_sha256"] = approval["seal"]
+    result["approved_launcher_sha256"] = approval["launcher"]
+    result["approved_verifier_sha256"] = approval["verifier"]
+    result["host_approval_file"] = str(approval["file"])
     result["command"] = args
     try:
         with open(out, "x", encoding="utf-8") as handle:

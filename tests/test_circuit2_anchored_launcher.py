@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -17,35 +18,16 @@ import seal_circuit2_launcher as sealing
 
 COMMIT = "a" * 40
 REAL_SEAL = Path(campaign.SEAL_PATH)
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+ROOT = Path(__file__).resolve().parents[1]
+REAL_SCRIPTS = ROOT / "scripts"
+REAL_LAUNCHER = REAL_SCRIPTS / "run_circuit2_campaign.py"
+REAL_VERIFIER = REAL_SCRIPTS / "seal_circuit2_launcher.py"
 ANCHOR = "--approved-seal-sha256"
 ENV = "GENESIS_HOST_APPROVALS"
 KEY = "circuit2_launcher_seal_sha256"
-DRIVER = """
-import sys
-import os
-from pathlib import Path
-root, seal, launcher, out, plan, witness = sys.argv[1:7]
-extra = sys.argv[7:]
-for entry in (root + "/src", root + "/scripts"):
-    sys.path.insert(0, entry)
-import run_circuit2_anchored as anchored
-import run_circuit2_campaign as campaign
-if os.environ.get("TEST_REPO_ROOT"):
-    anchored.REPO_ROOT = Path(os.environ["TEST_REPO_ROOT"])
-campaign.SEAL_PATH = Path(seal)
-campaign.LAUNCHER_FILE = Path(launcher)
-campaign.CANONICAL_PLAN_PATH = Path(plan)
-class _FakeRun:
-    def step(self):
-        return {"exhausted": False, "digest": "d", "spent": 0, "transmission": {"digest": "d"}}
-def new_run(arm, seed, learn, limit, budget):
-    Path(witness).write_text("appel", encoding="utf-8")
-    return _FakeRun()
-campaign.new_run = new_run
-argv = ["--plan", plan, "--seeds", "0", "--generations", "1", "--out", out, *extra]
-sys.exit(anchored.main(argv))
-"""
+LAUNCHER_KEY = "circuit2_launcher_sha256"
+VERIFIER_KEY = "circuit2_verifier_sha256"
+SEAL_PATH_KEY = "circuit2_launcher_seal_path"
 
 
 @pytest.fixture(scope="module")
@@ -103,18 +85,34 @@ def _args(plan):
     return ["--plan", str(plan), "--seeds", "0", "--generations", "1"]
 
 
-def _write_approval(path, digest, mode=0o600):
+def _write_approval(path, content, mode=0o600):
     """Fixture synthétique : écrit un fichier d'approbation hôte au format JSON attendu."""
-    path.write_text(json.dumps({KEY: digest}), encoding="utf-8")
+    path.write_text(json.dumps(content), encoding="utf-8")
     os.chmod(path, mode)
     return path
 
 
+def _content(launcher, verifier, seal, seal_path):
+    """Fixture synthétique : contenu d'approbation hôte calculé sur les octets des fichiers donnés."""
+    return {
+        KEY: _approved(seal),
+        LAUNCHER_KEY: _approved(launcher),
+        VERIFIER_KEY: _approved(verifier),
+        SEAL_PATH_KEY: str(seal_path),
+    }
+
+
 @pytest.fixture
 def host_approval(tmp_path, launcher_seal, monkeypatch):
-    """Fixture synthétique : approbation hôte hors dépôt (tmp_path), mode 0o600, empreinte du sceau courant."""
-    path = _write_approval(tmp_path / "host_approvals.json", _approved(launcher_seal))
+    """Fixture synthétique : approbation hôte hors dépôt (tmp_path), mode 0o600, empreintes des fichiers courants.
+
+    Le propriétaire réel est le processus de test ; _current_uid est simulé pour que le fichier
+    soit vu comme appartenant à un autre uid. La règle de propriété n'est exercée pour de bon
+    qu'en processus séparé.
+    """
+    path = _write_approval(tmp_path / "host_approvals.json", _content(REAL_LAUNCHER, REAL_VERIFIER, launcher_seal, launcher_seal))
     assert not path.resolve().is_relative_to(anchored.REPO_ROOT.resolve())
+    monkeypatch.setattr(anchored, "_current_uid", lambda: os.geteuid() + 1)
     monkeypatch.setenv(ENV, str(path))
     return path
 
@@ -196,64 +194,184 @@ def test_existing_output_is_refused(plan_path, tmp_path, launcher_seal, host_app
     assert calls == []
 
 
-def test_coordinated_alteration_is_refused_and_the_positive_control_generates(tmp_path):
-    plan = freeze.build_plan(measure=lambda: {str(s): 100 for s in freeze.SEEDS}, machinery_commit=COMMIT)
-    plan_file = tmp_path / "PLAN_SUBPROCESS.json"
-    plan_file.write_text(json.dumps(plan), encoding="utf-8")
-    driver = tmp_path / "driver.py"
-    driver.write_text(DRIVER, encoding="utf-8")
-    real_launcher = Path(campaign.LAUNCHER_FILE)
-    host_dir = tmp_path / "host"
-    host_dir.mkdir()
+@pytest.mark.parametrize("key", [KEY, LAUNCHER_KEY, VERIFIER_KEY])
+def test_refusal_when_one_approved_fingerprint_differs_and_the_campaign_is_not_imported(key, host_approval, plan_path, tmp_path, calls, capsys, monkeypatch):
+    imported = []
+    monkeypatch.setattr(anchored, "_import_campaign", lambda approval: imported.append(approval))
+    data = json.loads(host_approval.read_text(encoding="utf-8"))
+    data[key] = "0" * 64
+    host_approval.write_text(json.dumps(data), encoding="utf-8")
+    _refused(plan_path, tmp_path, calls, capsys, fragment="ne correspond pas")
+    assert imported == []
 
-    def run(seal, launcher, approval, out, witness, extra=(), repo_root=None):
-        env = {k: v for k, v in os.environ.items() if k not in (ENV, "TEST_REPO_ROOT")}
-        if approval is not None:
-            env[ENV] = str(approval)
-        if repo_root is not None:
-            env["TEST_REPO_ROOT"] = str(repo_root)
-        command = [sys.executable, "-I", str(driver), str(SCRIPTS.parent), str(seal), str(launcher), str(out), str(plan_file), str(witness), *extra]
-        return subprocess.run(command, capture_output=True, text=True, timeout=120, env=env)
 
-    good_seal = tmp_path / "seal_ok.json"
-    good_seal.write_text(json.dumps(sealing.build_seal(plan["digest"])), encoding="utf-8")
-    old = _approved(good_seal)
-    host_ok = _write_approval(host_dir / "host_ok.json", old)
-    out_ok = tmp_path / "OUT_OK.json"
-    witness_ok = tmp_path / "WITNESS_OK.txt"
-    positive = run(good_seal, real_launcher, host_ok, out_ok, witness_ok)
-    assert positive.returncode == 0, positive.stderr
-    assert out_ok.exists()
-    assert witness_ok.exists()
-    assert json.loads(out_ok.read_text(encoding="utf-8"))["host_approval_file"] == str(host_ok.resolve())
+def test_refusal_when_the_approval_belongs_to_the_current_uid(host_approval, plan_path, tmp_path, calls, capsys, monkeypatch):
+    owner = host_approval.stat().st_uid
+    if owner == 0:
+        pytest.skip("fichier appartenant à root : accepté par la règle (autre uid ou root)")
+    imported = []
+    monkeypatch.setattr(anchored, "_current_uid", lambda: owner)
+    monkeypatch.setattr(anchored, "_import_campaign", lambda approval: imported.append(approval))
+    _refused(plan_path, tmp_path, calls, capsys, fragment="propriétaire")
+    assert imported == []
 
-    launcher = tmp_path / "launcher_altered.py"
-    launcher.write_bytes(real_launcher.read_bytes() + b"\n# altere\n")
-    body = {k: v for k, v in json.loads(good_seal.read_text(encoding="utf-8")).items() if k != "digest"}
-    body["launcher_sha256"] = hashlib.sha256(launcher.read_bytes()).hexdigest()
-    seal = tmp_path / "seal_altered.json"
+
+def test_refusal_when_the_campaign_module_uses_another_seal(host_approval, launcher_seal, plan_path, tmp_path, calls, capsys):
+    other = tmp_path / "OTHER_SEAL.json"
+    other.write_bytes(launcher_seal.read_bytes())
+    data = json.loads(host_approval.read_text(encoding="utf-8"))
+    data[SEAL_PATH_KEY] = str(other)
+    host_approval.write_text(json.dumps(data), encoding="utf-8")
+    _refused(plan_path, tmp_path, calls, capsys, fragment="autre sceau")
+
+
+def test_existing_output_is_refused_before_the_campaign_import(host_approval, plan_path, tmp_path, capsys, monkeypatch):
+    imported = []
+    monkeypatch.setattr(anchored, "_import_campaign", lambda approval: imported.append(approval))
+    out = tmp_path / "OUT.json"
+    out.write_text("existant", encoding="utf-8")
+    assert anchored.main([*_args(plan_path), "--out", str(out)]) == 2
+    assert capsys.readouterr().out == ""
+    assert imported == []
+
+
+ENTRIES = ["direct", "wrapper"]
+SCENARIOS = {
+    "altered_launcher_recomputed_seal": "ne correspond pas",
+    "approval_inside_repository": "dépôt",
+    "approval_group_writable": "inscriptible",
+}
+WRAPPER = """
+import runpy
+import sys
+script = sys.argv[1]
+sys.argv = [script, *sys.argv[2:]]
+runpy.run_path(script, run_name="__main__")
+"""
+STUB = """
+
+def main(argv=None):
+    print('{"launcher_provenance": {}}')
+    return 0
+"""
+
+
+def _candidate_tree(base, witness, stub=False):
+    """Fixture synthétique : copie du dépôt candidat (scripts, sceau recalculé), lanceur copié avec code témoin.
+
+    Le code ajouté crée le fichier témoin dès l'import du module de campagne ; avec stub, main est
+    remplacé pour qu'aucune campagne réelle ne puisse être lancée, même en cas de régression.
+    """
+    tree = base / "candidate"
+    shutil.copytree(REAL_SCRIPTS, tree / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
+    if (ROOT / "src").is_dir():
+        os.symlink(ROOT / "src", tree / "src")
+    for package in ("genesis", "mira_core", "metamorphosis"):
+        if (ROOT / package).is_dir():
+            os.symlink(ROOT / package, tree / package)
+    launcher = tree / "scripts" / "run_circuit2_campaign.py"
+    added = "\n\n# candidat synthétique (test)\nfrom pathlib import Path as _Witness\n\n_Witness(" + repr(str(witness)) + ").write_text('importe', encoding='utf-8')\n"
+    launcher.write_bytes(REAL_LAUNCHER.read_bytes() + (added + (STUB if stub else "")).encode("utf-8"))
+    seal = tree / REAL_SEAL.resolve().relative_to(ROOT)
+    seal.parent.mkdir(parents=True, exist_ok=True)
+    body = {k: v for k, v in json.loads(REAL_SEAL.read_text(encoding="utf-8")).items() if k != "digest"}
+    body["launcher_sha256"] = _approved(launcher)
     seal.write_text(json.dumps({**body, "digest": sealing.digest_of(body)}), encoding="utf-8")
-    new = _approved(seal)
-    assert new != old
-    fake_repo = tmp_path / "repo"
-    fake_repo.mkdir()
-    in_repo = _write_approval(fake_repo / "approvals.json", new)
-    group_writable = _write_approval(host_dir / "host_group.json", new, 0o660)
+    return tree, launcher, seal
 
-    def attempt(label, approval, fragment, extra=(), repo_root=None):
-        out = tmp_path / f"OUT_{label}.json"
-        witness = tmp_path / f"WITNESS_{label}.txt"
-        result = run(seal, launcher, approval, out, witness, extra, repo_root)
-        assert result.returncode == 2, result.stderr
-        assert result.stdout == ""
-        assert fragment in result.stderr
-        assert not out.exists()
-        assert not witness.exists()
 
-    attempt("argument", host_ok, ANCHOR, extra=[ANCHOR, new])
-    attempt("in_repo", in_repo, "dépôt", repo_root=fake_repo)
-    attempt("group_writable", group_writable, "inscriptible")
-    attempt("unchanged_host", host_ok, "ne correspond pas")
+def _run(entry, tree, approval, out, tmp_path):
+    """Lance le vrai run_circuit2_anchored.py de la copie en processus séparé (python -I), directement ou via un wrapper."""
+    work = tmp_path / "work"
+    work.mkdir(exist_ok=True)
+    wrapper = tmp_path / "wrapper.py"
+    wrapper.write_text(WRAPPER, encoding="utf-8")
+    script = tree / "scripts" / "run_circuit2_anchored.py"
+    head = [sys.executable, "-I", str(script)] if entry == "direct" else [sys.executable, "-I", str(wrapper), str(script)]
+    env = {k: v for k, v in os.environ.items() if k != ENV}
+    env[ENV] = str(approval)
+    command = [*head, "--seeds", "0", "--generations", "1", "--out", str(out)]
+    return subprocess.run(command, cwd=work, capture_output=True, text=True, timeout=120, env=env)
+
+
+def _scenario(name, tmp_path, witness):
+    """Fixture synthétique : arbre candidat et fichier d'approbation hôte du scénario de refus (main remplacé par un stub)."""
+    tree, launcher, seal = _candidate_tree(tmp_path, witness, stub=True)
+    verifier = tree / "scripts" / "seal_circuit2_launcher.py"
+    host = tmp_path / "host"
+    host.mkdir()
+    if name == "altered_launcher_recomputed_seal":
+        assert _approved(launcher) != _approved(REAL_LAUNCHER)
+        assert _approved(seal) != _approved(REAL_SEAL)
+        assert json.loads(seal.read_text(encoding="utf-8"))["launcher_sha256"] == _approved(launcher)
+        return tree, _write_approval(host / "approvals.json", _content(REAL_LAUNCHER, REAL_VERIFIER, REAL_SEAL, seal))
+    content = _content(launcher, verifier, seal, seal)
+    if name == "approval_inside_repository":
+        return tree, _write_approval(tree / "approvals.json", content)
+    return tree, _write_approval(host / "approvals.json", content, 0o660)
+
+
+def _assert_refused(done, out, witness, fragment):
+    assert done.returncode == 2, done.stderr
+    assert done.stdout == ""
+    assert fragment in done.stderr
+    assert not out.exists()
+    assert not witness.exists()
+
+
+def test_the_witness_is_created_when_the_candidate_module_is_imported(tmp_path):
+    """Témoin de contrôle : sans approbation, importer la copie du lanceur crée bien le fichier témoin."""
+    witness = tmp_path / "WITNESS.txt"
+    tree, _, _ = _candidate_tree(tmp_path, witness, stub=True)
+    snippet = "import sys\nfor entry in sys.argv[1:]:\n    sys.path.insert(0, entry)\nimport run_circuit2_campaign\n"
+    done = subprocess.run([sys.executable, "-I", "-c", snippet, str(tree / "src"), str(tree / "scripts")], cwd=tmp_path, capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr
+    assert witness.read_text(encoding="utf-8") == "importe"
+
+
+@pytest.mark.parametrize("entry", ENTRIES)
+@pytest.mark.parametrize("scenario", list(SCENARIOS))
+def test_candidate_scenarios_are_refused_in_a_separate_process_before_the_import(scenario, entry, tmp_path):
+    witness = tmp_path / "WITNESS.txt"
+    out = tmp_path / "OUT.json"
+    tree, approval = _scenario(scenario, tmp_path, witness)
+    _assert_refused(_run(entry, tree, approval, out, tmp_path), out, witness, SCENARIOS[scenario])
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="sous root, un fichier créé par le test appartient à root et est accepté par la règle")
+@pytest.mark.parametrize("entry", ENTRIES)
+def test_a_fake_approval_created_by_the_candidate_is_refused(entry, tmp_path):
+    """Même uid que le candidat, mode 0600, hors dépôt, empreintes cohérentes avec la copie : refus par propriétaire."""
+    witness = tmp_path / "WITNESS.txt"
+    out = tmp_path / "OUT.json"
+    tree, launcher, seal = _candidate_tree(tmp_path, witness, stub=True)
+    host = tmp_path / "host"
+    host.mkdir()
+    verifier = tree / "scripts" / "seal_circuit2_launcher.py"
+    approval = _write_approval(host / "approvals.json", _content(launcher, verifier, seal, seal))
+    assert approval.stat().st_uid == os.geteuid()
+    _assert_refused(_run(entry, tree, approval, out, tmp_path), out, witness, "propriétaire")
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="témoin positif : une approbation valide exige un fichier appartenant à root ou à un autre uid")
+@pytest.mark.parametrize("entry", ENTRIES)
+def test_positive_witness_with_a_valid_approval(entry, tmp_path):
+    """Candidat synthétique (main remplacé, aucune campagne réelle) : l'import n'a lieu qu'avec une approbation valide."""
+    witness = tmp_path / "WITNESS.txt"
+    out = tmp_path / "OUT.json"
+    tree, launcher, seal = _candidate_tree(tmp_path, witness, stub=True)
+    host = tmp_path / "host"
+    host.mkdir()
+    verifier = tree / "scripts" / "seal_circuit2_launcher.py"
+    approval = _write_approval(host / "approvals.json", _content(launcher, verifier, seal, seal))
+    assert approval.stat().st_uid == 0
+    done = _run(entry, tree, approval, out, tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == ""
+    assert witness.read_text(encoding="utf-8") == "importe"
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert written["host_approval_file"] == str(approval.resolve())
+    assert written["approved_seal_sha256"] == _approved(seal)
 
 
 def test_canonical_launcher_matches_the_versioned_seal():

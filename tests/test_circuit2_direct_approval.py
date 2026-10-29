@@ -6,6 +6,10 @@ gelé n'est PAS protégé par le wrapper, et cette limite subsiste : le refuser
 exigerait un nouveau lanceur re-scellé, décision à prendre séparément.
 Le dépôt ne prouve pas l'indépendance de l'approbation : elle dépend de la
 configuration de l'hôte (fichier hors dépôt, non inscriptible par le candidat).
+La règle de propriété (fichier appartenant à root ou à un autre uid que l'uid courant)
+dépend de la configuration de l'hôte ; sous root, un fichier créé par le test appartient
+à root, d'où les tests skipped. Les autres modules importés par le lanceur ne sont pas
+couverts par les empreintes du lanceur, du vérificateur et du sceau.
 """
 from __future__ import annotations
 
@@ -27,6 +31,9 @@ LAUNCHER = ROOT / "scripts" / "run_circuit2_campaign.py"
 OPTION = "--approved-seal-sha256"
 ENV = "GENESIS_HOST_APPROVALS"
 KEY = "circuit2_launcher_seal_sha256"
+LAUNCHER_KEY = "circuit2_launcher_sha256"
+VERIFIER_KEY = "circuit2_verifier_sha256"
+SEAL_PATH_KEY = "circuit2_launcher_seal_path"
 
 
 def _sha(path):
@@ -40,7 +47,7 @@ def _anchored(tmp_path, extra, approvals=None):
         env[ENV] = str(approvals)
     return subprocess.run(
         [
-            sys.executable, "-B", str(SCRIPT),
+            sys.executable, "-I", "-B", str(SCRIPT),
             "--seeds", "0", "--generations", "1",
             "--out", str(out), *extra,
         ],
@@ -111,3 +118,86 @@ def test_direct_historical_entry_point_bypasses_the_wrapper():
     assert ast.dump(module.body[-1]) == ast.dump(expected)
     assert OPTION not in source
     assert "run_circuit2_anchored" not in source
+
+
+IMPORT_SNIPPET = """
+import sys
+sys.path.insert(0, sys.argv[1])
+import run_circuit2_anchored
+sys.exit(3 if "run_circuit2_campaign" in sys.modules else 0)
+"""
+WRAPPER = """
+import runpy
+import sys
+from pathlib import Path
+script, flag = sys.argv[1], sys.argv[2]
+sys.argv = [script, *sys.argv[3:]]
+try:
+    runpy.run_path(script, run_name="__main__")
+finally:
+    imported = "run_circuit2_campaign" in sys.modules
+    Path(flag).write_text("importe" if imported else "non importe", encoding="utf-8")
+"""
+
+
+def test_the_anchored_script_has_no_module_level_import_of_the_campaign():
+    """Le module de campagne est importé par importlib dans main, après les contrôles, jamais au niveau du module."""
+    module = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+    names = []
+    for node in module.body:
+        if isinstance(node, ast.Import):
+            names += [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names.append(node.module or "")
+    assert "run_circuit2_campaign" not in names
+
+
+def test_importing_the_anchored_script_does_not_import_the_campaign(tmp_path):
+    command = [sys.executable, "-I", "-B", "-c", IMPORT_SNIPPET, str(SCRIPT.parent)]
+    done = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == ""
+
+
+def _launch(entry, tmp_path, tmp_path_factory, approvals):
+    """Lance le vrai script en processus séparé (python -I), directement ou via un wrapper qui note l'import."""
+    helper = tmp_path_factory.mktemp("helper")
+    flag = helper / "modules.txt"
+    wrapper = helper / "wrapper.py"
+    wrapper.write_text(WRAPPER, encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k != ENV}
+    env[ENV] = str(approvals)
+    tail = ["--seeds", "0", "--generations", "1", "--out", str(tmp_path / "OUT.json")]
+    if entry == "direct":
+        command = [sys.executable, "-I", "-B", str(SCRIPT), *tail]
+    else:
+        command = [sys.executable, "-I", "-B", str(wrapper), str(SCRIPT), str(flag), *tail]
+    done = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env)
+    return done, flag
+
+
+@pytest.mark.parametrize("entry", ["direct", "wrapper"])
+def test_the_real_script_refuses_a_wrong_approval_before_importing_the_campaign(entry, tmp_path, tmp_path_factory):
+    """Fixture synthétique : empreintes volontairement fausses ; aucune campagne ne peut démarrer."""
+    wrong = {KEY: "0" * 64, LAUNCHER_KEY: "0" * 64, VERIFIER_KEY: "0" * 64, SEAL_PATH_KEY: str(Path(campaign.SEAL_PATH))}
+    approvals = _host_file(tmp_path_factory, json.dumps(wrong))
+    done, flag = _launch(entry, tmp_path, tmp_path_factory, approvals)
+    assert done.returncode == 2, done.stderr
+    assert done.stdout == ""
+    assert "ne correspond pas" in done.stderr
+    assert list(tmp_path.iterdir()) == []
+    if entry == "wrapper":
+        assert flag.read_text(encoding="utf-8") == "non importe"
+
+
+def test_the_wrapper_flag_detects_an_import(tmp_path_factory):
+    """Témoin de contrôle : le wrapper signale un import de run_circuit2_campaign (module factice, aucune campagne)."""
+    helper = tmp_path_factory.mktemp("control")
+    script = helper / "importer.py"
+    script.write_text("import sys\nsys.modules['run_circuit2_campaign'] = sys\n", encoding="utf-8")
+    wrapper = helper / "wrapper.py"
+    wrapper.write_text(WRAPPER, encoding="utf-8")
+    flag = helper / "modules.txt"
+    done = subprocess.run([sys.executable, "-I", "-B", str(wrapper), str(script), str(flag)], cwd=helper, capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert flag.read_text(encoding="utf-8") == "importe"
