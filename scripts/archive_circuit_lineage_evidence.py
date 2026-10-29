@@ -44,7 +44,11 @@ def check_output_path(output, root=None):
     target = Path(output).resolve()
     for name in ALLOWED_DIRS:
         allowed = (base / name).resolve()
-        if allowed in target.parents:
+        if (
+            base in allowed.parents
+            and allowed in target.parents
+            and base in target.parents
+        ):
             return target
     raise ArchiveError(
         f"sortie refusée (hors results/ et experiment/) : {output}"
