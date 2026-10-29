@@ -52,9 +52,14 @@ ENTRY_POINT_PREFIXES = (
     "g11_", "g12_", "select_", "preregister_",
 )
 
-# Standalone archiving CLI, never imported by another module. It is matched by exact module
-# name rather than by prefix so that no sibling script is implicitly accepted as an entry point.
-ENTRY_POINT_NAMES = {"archive_circuit_lineage_evidence"}
+# Standalone command-line tools, never imported by another module: the circuit lineage
+# evidence archiver and the circuit 2 launcher revision locator. They are matched by exact
+# module name rather than by prefix so that no sibling script is implicitly accepted as an
+# entry point.
+ENTRY_POINT_NAMES = {
+    "archive_circuit_lineage_evidence",
+    "locate_circuit2_launcher_revision",
+}
 
 # Tools invoked from the command line and never imported by source code. Declaring them
 # without importing them is legitimate.

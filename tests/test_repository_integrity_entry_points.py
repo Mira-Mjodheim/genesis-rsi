@@ -41,6 +41,10 @@ def synthetic_tree(tmp_path, checker, monkeypatch):
         SYNTHETIC_SOURCE, encoding="utf-8"
     )
     (scripts / "archive_other.py").write_text(SYNTHETIC_SOURCE, encoding="utf-8")
+    (scripts / "locate_circuit2_launcher_revision.py").write_text(
+        SYNTHETIC_SOURCE, encoding="utf-8"
+    )
+    (scripts / "locate_circuit2_other.py").write_text(SYNTHETIC_SOURCE, encoding="utf-8")
     monkeypatch.setattr(checker, "ROOT", tmp_path)
     monkeypatch.setattr(checker, "PACKAGES", ("genesis",))
     return tmp_path
@@ -49,17 +53,22 @@ def synthetic_tree(tmp_path, checker, monkeypatch):
 def test_listed_entry_point_is_not_reported(checker, synthetic_tree):
     problems = checker.check_orphans()
     assert not any("archive_circuit_lineage_evidence.py" in p for p in problems)
+    assert not any("locate_circuit2_launcher_revision.py" in p for p in problems)
 
 
 def test_unlisted_neighbour_is_still_reported(checker, synthetic_tree):
     problems = checker.check_orphans()
     assert problems == [
-        "scripts/archive_other.py is not imported by any entry point"
+        "scripts/archive_other.py is not imported by any entry point",
+        "scripts/locate_circuit2_other.py is not imported by any entry point",
     ]
 
 
 def test_entry_point_constants_are_exact(checker):
-    assert checker.ENTRY_POINT_NAMES == {"archive_circuit_lineage_evidence"}
+    assert checker.ENTRY_POINT_NAMES == {
+        "archive_circuit_lineage_evidence",
+        "locate_circuit2_launcher_revision",
+    }
     assert checker.ENTRY_POINT_PREFIXES == (
         "run_", "audit_", "author_", "build_", "train_", "check_",
         "g11_", "g12_", "select_", "preregister_",
