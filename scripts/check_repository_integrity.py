@@ -52,6 +52,10 @@ ENTRY_POINT_PREFIXES = (
     "g11_", "g12_", "select_", "preregister_",
 )
 
+# Standalone archiving CLI, never imported by another module. It is matched by exact module
+# name rather than by prefix so that no sibling script is implicitly accepted as an entry point.
+ENTRY_POINT_NAMES = {"archive_circuit_lineage_evidence"}
+
 # Tools invoked from the command line and never imported by source code. Declaring them
 # without importing them is legitimate.
 # Declared in pyproject but never imported by the project, because they are invoked as
@@ -161,7 +165,9 @@ def check_orphans() -> list[str]:
     roots = [
         name
         for name, path in files.items()
-        if path.parts[-2] == "tests" or name.startswith(ENTRY_POINT_PREFIXES)
+        if path.parts[-2] == "tests"
+        or name.startswith(ENTRY_POINT_PREFIXES)
+        or name in ENTRY_POINT_NAMES
     ]
 
     reachable: set[str] = set()
