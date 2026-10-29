@@ -203,3 +203,18 @@ def test_plain_results_directory_is_accepted_and_written(tmp_path):
     assert out.exists()
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["schema"] == mod.SCHEMA
+
+
+@pytest.mark.parametrize("name", ["results", "experiment"])
+def test_refuses_symlink_to_other_repo_directory(tmp_path, name):
+    trace = _write_trace(tmp_path)
+    repo = tmp_path / "repo"
+    docs = repo / "docs"
+    docs.mkdir(parents=True)
+    try:
+        (repo / name).symlink_to(docs, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("création de lien symbolique impossible")
+    with pytest.raises(mod.ArchiveError):
+        mod.archive(trace, repo / name / "a.json", root=repo)
+    assert list(docs.iterdir()) == []

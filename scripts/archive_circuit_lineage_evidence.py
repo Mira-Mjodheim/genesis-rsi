@@ -43,12 +43,10 @@ def check_output_path(output, root=None):
     base = Path(root).resolve() if root is not None else REPO_ROOT
     target = Path(output).resolve()
     for name in ALLOWED_DIRS:
-        allowed = (base / name).resolve()
-        if (
-            base in allowed.parents
-            and allowed in target.parents
-            and base in target.parents
-        ):
+        allowed = base / name
+        if allowed.resolve() != allowed:
+            continue
+        if allowed in target.parents:
             return target
     raise ArchiveError(
         f"sortie refusée (hors results/ et experiment/) : {output}"
