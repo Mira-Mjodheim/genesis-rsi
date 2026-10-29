@@ -23,6 +23,7 @@ Champs ajoutés à chaque exécution : stopped_early (la règle a joué), stop_r
 de générations réellement exécutées (nombre de appels à step()).
 Champs de score d'une génération : score = bibliothèque transmise (parent_score) et selection_score =
 score de la procédure candidate (state["score"]) pour inherited_lineage ; None pour les trois autres bras.
+Identité du lanceur : le lanceur refuse de s'exécuter sans sceau d'identité valide.
 """
 from __future__ import annotations
 
@@ -39,11 +40,14 @@ for _path in (HERE, HERE.parent):
 
 import freeze_circuit2_plan as freeze  # noqa: E402
 import run_circuit2_arms as arms  # noqa: E402
+import seal_circuit2_launcher as sealing  # noqa: E402
 
 PlanError = freeze.PlanError
 CANONICAL_PLAN_PATH = freeze.PLAN_PATH
 STOP_REASON = "exhausted_without_adoption"
 LIMIT_REASON = "generation_limit"
+LAUNCHER_FILE = Path(__file__).resolve()
+SEAL_PATH = sealing.SEAL_PATH
 
 
 def _read_plan(path):
@@ -185,6 +189,10 @@ def run_until_stop(arm, seed, learn, count, limit, budget):
 def run_campaign(plan, seeds=None, generations=None):
     """Exécute les bras sur LEARN seul ; ne calcule aucun gain ni succès."""
     check_plan(plan)
+    try:
+        sealing.verify_launcher(plan["digest"], SEAL_PATH, LAUNCHER_FILE)
+    except sealing.SealError as exc:
+        raise PlanError(f"identité du lanceur non scellée : {exc}") from exc
     budgets = plan["budgets"]
     plan_seeds = list(plan["seeds"])
     chosen = plan_seeds if seeds is None else list(seeds)
