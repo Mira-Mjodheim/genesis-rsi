@@ -21,14 +21,22 @@ ANCHOR = "--approved-seal-sha256"
 DRIVER = """
 import sys
 from pathlib import Path
-root, seal, launcher, approved, out = sys.argv[1:6]
+root, seal, launcher, approved, out, plan, witness = sys.argv[1:8]
 for entry in (root + "/src", root + "/scripts"):
     sys.path.insert(0, entry)
 import run_circuit2_anchored as anchored
 import run_circuit2_campaign as campaign
 campaign.SEAL_PATH = Path(seal)
 campaign.LAUNCHER_FILE = Path(launcher)
-argv = ["--plan", "absent.json", "--seeds", "0", "--generations", "1", "--approved-seal-sha256", approved, "--out", out]
+campaign.CANONICAL_PLAN_PATH = Path(plan)
+class _FakeRun:
+    def step(self):
+        return {"exhausted": False, "digest": "d", "spent": 0, "transmission": {"digest": "d"}}
+def new_run(arm, seed, learn, limit, budget):
+    Path(witness).write_text("appel", encoding="utf-8")
+    return _FakeRun()
+campaign.new_run = new_run
+argv = ["--plan", plan, "--seeds", "0", "--generations", "1", "--approved-seal-sha256", approved, "--out", out]
 sys.exit(anchored.main(argv))
 """
 
@@ -123,20 +131,40 @@ def test_existing_output_is_refused(plan_path, tmp_path, launcher_seal, calls, c
 
 
 def test_joint_alteration_of_launcher_and_seal_is_refused(tmp_path):
-    approved = _approved(REAL_SEAL)
+    plan = freeze.build_plan(measure=lambda: {str(s): 100 for s in freeze.SEEDS}, machinery_commit=COMMIT)
+    plan_file = tmp_path / "PLAN_SUBPROCESS.json"
+    plan_file.write_text(json.dumps(plan), encoding="utf-8")
+    driver = tmp_path / "driver.py"
+    driver.write_text(DRIVER, encoding="utf-8")
+    real_launcher = Path(campaign.LAUNCHER_FILE)
+
+    def run(seal, launcher, approved, out, witness):
+        return subprocess.run([sys.executable, "-I", str(driver), str(SCRIPTS.parent), str(seal), str(launcher), approved, str(out), str(plan_file), str(witness)], capture_output=True, text=True, timeout=120)
+
+    good_seal = tmp_path / "seal_ok.json"
+    good_seal.write_text(json.dumps(sealing.build_seal(plan["digest"])), encoding="utf-8")
+    approved = _approved(good_seal)
+    out_ok = tmp_path / "OUT_OK.json"
+    witness_ok = tmp_path / "WITNESS_OK.txt"
+    positive = run(good_seal, real_launcher, approved, out_ok, witness_ok)
+    assert positive.returncode == 0, positive.stderr
+    assert out_ok.exists()
+    assert witness_ok.exists()
+
     launcher = tmp_path / "launcher_altered.py"
-    launcher.write_bytes(Path(campaign.LAUNCHER_FILE).read_bytes() + b"\n# altere\n")
-    body = {k: v for k, v in json.loads(REAL_SEAL.read_text(encoding="utf-8")).items() if k != "digest"}
+    launcher.write_bytes(real_launcher.read_bytes() + b"\n# altere\n")
+    body = {k: v for k, v in json.loads(good_seal.read_text(encoding="utf-8")).items() if k != "digest"}
     body["launcher_sha256"] = hashlib.sha256(launcher.read_bytes()).hexdigest()
     seal = tmp_path / "seal_altered.json"
     seal.write_text(json.dumps({**body, "digest": sealing.digest_of(body)}), encoding="utf-8")
-    driver = tmp_path / "driver.py"
-    driver.write_text(DRIVER, encoding="utf-8")
     out = tmp_path / "OUT_ALTERED.json"
-    result = subprocess.run([sys.executable, "-I", str(driver), str(SCRIPTS.parent), str(seal), str(launcher), approved, str(out)], capture_output=True, text=True, timeout=120)
+    witness = tmp_path / "WITNESS_ALTERED.txt"
+    result = run(seal, launcher, approved, out, witness)
     assert result.returncode == 2
     assert result.stdout == ""
+    assert "ne correspond pas à l'ancre approuvée" in result.stderr
     assert not out.exists()
+    assert not witness.exists()
 
 
 def test_canonical_launcher_matches_the_versioned_seal():
