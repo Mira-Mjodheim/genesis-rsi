@@ -126,16 +126,36 @@ def canonical_json(report: dict[str, Any]) -> str:
 
 
 def resolve_output(repo: Path, output: str) -> Path:
+    repo_real = repo.resolve()
+    allowed = []
+    for name in ALLOWED_OUTPUT_DIRS:
+        root = repo / name
+        real_root = repo_real / name
+        if root.is_symlink() or (root.exists() and root.resolve() != real_root):
+            raise DiagnosticError(f"sortie refusée : racine non sûre : {root}")
+        allowed.append(real_root)
+
     candidate = Path(output)
     if not candidate.is_absolute():
         candidate = repo / candidate
     target = candidate.resolve()
-    allowed = [(repo / name).resolve() for name in ALLOWED_OUTPUT_DIRS]
-    if not any(root in target.parents for root in allowed):
+    for root in allowed:
+        try:
+            relative = target.relative_to(root)
+        except ValueError:
+            continue
+        if relative.parts:
+            break
+    else:
         raise DiagnosticError(
             "sortie refusée : le chemin doit être sous results/ ou docs/"
         )
-    if target.exists() or target.is_symlink():
+    if (
+        candidate.exists()
+        or candidate.is_symlink()
+        or target.exists()
+        or target.is_symlink()
+    ):
         raise DiagnosticError(f"sortie refusée : fichier déjà présent : {target}")
     return target
 

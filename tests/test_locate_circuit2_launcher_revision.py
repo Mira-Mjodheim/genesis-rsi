@@ -134,3 +134,48 @@ def test_ecrit_sous_results_sans_ecraser(repo, capsys):
     assert target.read_bytes() == contenu
     assert (root / MANIFEST).read_bytes() == manifest_avant
     assert (root / LAUNCHER).read_bytes() == launcher_avant
+
+@pytest.mark.parametrize("name", ["results", "docs"])
+@pytest.mark.parametrize("output_name", ["results", "docs"])
+def test_refuse_une_racine_liee_hors_depot(
+    repo, capsys, tmp_path, name, output_name
+):
+    root, _ = repo
+    write_manifest(root, sha(VERSIONS[0]))
+    exterior = tmp_path / "exterieur"
+    exterior.mkdir()
+    link = root / name
+    try:
+        link.symlink_to(exterior, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"liens symboliques indisponibles : {exc}")
+
+    code, out, err = run_tool(
+        capsys, root, "--output", f"{output_name}/rapport.json"
+    )
+    assert code == 2
+    assert out == ""
+    assert "sortie refusée" in err
+    assert list(exterior.iterdir()) == []
+    assert link.is_symlink()
+    assert link.readlink() == exterior
+    assert not (root / output_name / "rapport.json").exists()
+
+def test_refuse_results_lie_a_docs(repo, capsys):
+    root, _ = repo
+    write_manifest(root, sha(VERSIONS[0]))
+    docs = root / "docs"
+    docs.mkdir()
+    link = root / "results"
+    try:
+        link.symlink_to(docs, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"liens symboliques indisponibles : {exc}")
+
+    code, out, err = run_tool(capsys, root, "--output", "results/rapport.json")
+    assert code == 2
+    assert out == ""
+    assert "sortie refusée" in err
+    assert list(docs.iterdir()) == []
+    assert link.is_symlink()
+    assert link.readlink() == docs
