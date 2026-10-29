@@ -53,12 +53,13 @@ ENTRY_POINT_PREFIXES = (
 )
 
 # Standalone command-line tools, never imported by another module: the circuit lineage
-# evidence archiver and the circuit 2 launcher revision locator. They are matched by exact
-# module name rather than by prefix so that no sibling script is implicitly accepted as an
-# entry point.
+# evidence archiver, the circuit 2 launcher revision locator and the circuit 2 launcher
+# revision exporter. They are matched by exact module name rather than by prefix so that
+# no sibling script is implicitly accepted as an entry point.
 ENTRY_POINT_NAMES = {
     "archive_circuit_lineage_evidence",
     "locate_circuit2_launcher_revision",
+    "export_circuit2_launcher_revision",
 }
 
 # Tools invoked from the command line and never imported by source code. Declaring them
