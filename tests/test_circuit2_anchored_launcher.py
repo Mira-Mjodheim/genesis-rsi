@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
+import py_compile
 import shutil
 import subprocess
 import sys
@@ -108,13 +110,28 @@ def host_approval(tmp_path, launcher_seal, monkeypatch):
 
     Le propriétaire réel est le processus de test ; _current_uid est simulé pour que le fichier
     soit vu comme appartenant à un autre uid. La règle de propriété n'est exercée pour de bon
-    qu'en processus séparé.
+    qu'en processus séparé. La chaîne des répertoires de tmp_path (même propriétaire réel) est
+    vue comme appartenant à un autre uid par la même simulation ; les règles d'inscriptibilité
+    des répertoires ne sont pas assouplies.
     """
     path = _write_approval(tmp_path / "host_approvals.json", _content(REAL_LAUNCHER, REAL_VERIFIER, launcher_seal, launcher_seal))
     assert not path.resolve().is_relative_to(anchored.REPO_ROOT.resolve())
     monkeypatch.setattr(anchored, "_current_uid", lambda: os.geteuid() + 1)
     monkeypatch.setenv(ENV, str(path))
     return path
+
+
+REAL_LOAD_VERIFIED = anchored._load_verified
+
+
+@pytest.fixture(autouse=True)
+def inprocess_modules(monkeypatch):
+    """Fixture synthétique : les tests en processus réutilisent les modules déjà importés (patchés par les fixtures).
+
+    Le chargement réel par octets est exercé par les tests de cache et par les tests en processus séparé.
+    """
+    known = {anchored.LAUNCHER_MODULE: campaign, anchored.VERIFIER_MODULE: sealing}
+    monkeypatch.setattr(anchored, "_load_verified", lambda name, path, source: known[name])
 
 
 def test_accepts_the_approved_seal(plan_path, tmp_path, sealed, launcher_seal, host_approval, calls):
@@ -140,6 +157,101 @@ def _refused(plan_path, tmp_path, calls, capsys, extra=(), fragment=None):
         assert fragment in captured.err
     assert not out.exists()
     assert calls == []
+
+
+def _verified_tree(tmp_path, host_approval, monkeypatch):
+    """Fixture synthétique : copie de scripts/ (lanceur et vérificateur intacts) avec le sceau réel copié et une approbation hôte sur cette copie.
+
+    SCRIPTS_DIR pointe sur la copie ; le chargement réel par octets est rétabli. Retourne le dossier scripts
+    de la copie et l'approbation validée par load_host_approval puis check_approved.
+    """
+    tree = tmp_path / "verified_tree"
+    shutil.copytree(REAL_SCRIPTS, tree / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
+    seal = tree / REAL_SEAL.resolve().relative_to(ROOT)
+    seal.parent.mkdir(parents=True, exist_ok=True)
+    seal.write_bytes(REAL_SEAL.read_bytes())
+    scripts = tree / "scripts"
+    _write_approval(host_approval, _content(scripts / "run_circuit2_campaign.py", scripts / "seal_circuit2_launcher.py", seal, seal))
+    monkeypatch.setattr(anchored, "SCRIPTS_DIR", scripts)
+    monkeypatch.setattr(anchored, "_load_verified", REAL_LOAD_VERIFIED)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.delitem(sys.modules, "run_circuit2_campaign", raising=False)
+    monkeypatch.delitem(sys.modules, "seal_circuit2_launcher", raising=False)
+    approval = anchored.load_host_approval()
+    anchored.check_approved(approval)
+    return scripts, approval
+
+
+def _plant_cache(scripts, witness, tmp_path):
+    """Fixture synthétique : .pyc malveillant (UNCHECKED_HASH) du lanceur et du vérificateur ; son code crée le fichier témoin."""
+    source = tmp_path / "malicious_source.py"
+    source.write_text("from pathlib import Path\nPath(" + repr(str(witness)) + ").write_text('execute', encoding='utf-8')\n", encoding="utf-8")
+    for name in ("run_circuit2_campaign.py", "seal_circuit2_launcher.py"):
+        target = scripts / name
+        cache = Path(importlib.util.cache_from_source(str(target)))
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        py_compile.compile(str(source), cfile=str(cache), dfile=str(target), doraise=True, invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)
+        assert cache.is_file()
+
+
+def test_a_malicious_bytecode_cache_is_never_executed(tmp_path, host_approval, monkeypatch):
+    """Régression : un .pyc UNCHECKED_HASH planté dans __pycache__ n'est pas exécuté ; le module vient des octets hachés."""
+    witness = tmp_path / "CACHE_WITNESS.txt"
+    scripts, approval = _verified_tree(tmp_path, host_approval, monkeypatch)
+    _plant_cache(scripts, witness, tmp_path)
+    module = anchored._import_campaign(approval)
+    assert not witness.exists()
+    assert sys.dont_write_bytecode is True
+    assert Path(module.__file__) == scripts / "run_circuit2_campaign.py"
+    assert approval["launcher_source"] == (scripts / "run_circuit2_campaign.py").read_bytes()
+    assert callable(module.main)
+    assert sys.modules["run_circuit2_campaign"] is module
+    verifier = sys.modules["seal_circuit2_launcher"]
+    assert Path(verifier.__file__) == scripts / "seal_circuit2_launcher.py"
+    assert callable(verifier.build_seal)
+
+
+def test_without_a_cache_the_verified_modules_load(tmp_path, host_approval, monkeypatch):
+    """Témoin positif : sans __pycache__ planté, le chargement par octets fonctionne."""
+    scripts, approval = _verified_tree(tmp_path, host_approval, monkeypatch)
+    assert not list(scripts.rglob("*.pyc"))
+    module = anchored._import_campaign(approval)
+    assert Path(module.__file__) == scripts / "run_circuit2_campaign.py"
+    assert callable(module.main)
+    assert not list(scripts.rglob("*.pyc"))
+
+
+@pytest.mark.parametrize("mode", [0o777, 0o770])
+def test_refusal_when_the_approval_is_in_a_replaceable_directory(mode, host_approval, plan_path, tmp_path, calls, capsys, monkeypatch):
+    imported = []
+    monkeypatch.setattr(anchored, "_import_campaign", lambda approval: imported.append(approval))
+    parent = tmp_path / "replaceable"
+    parent.mkdir()
+    moved = parent / "host_approvals.json"
+    shutil.copy2(host_approval, moved)
+    os.chmod(parent, mode)
+    monkeypatch.setenv(ENV, str(moved))
+    _refused(plan_path, tmp_path, calls, capsys, fragment="répertoire")
+    assert imported == []
+
+
+def test_refusal_when_a_parent_directory_belongs_to_the_current_uid(host_approval, plan_path, tmp_path, calls, capsys, monkeypatch):
+    owner = host_approval.parent.stat().st_uid
+    if owner == 0:
+        pytest.skip("répertoire appartenant à root : accepté par la règle (autre uid ou root)")
+    imported = []
+    real_load = anchored.load_host_approval
+
+    def approval_of_another_uid():
+        approval = real_load()
+        approval["owner"] = owner + 1
+        return approval
+
+    monkeypatch.setattr(anchored, "load_host_approval", approval_of_another_uid)
+    monkeypatch.setattr(anchored, "_current_uid", lambda: owner)
+    monkeypatch.setattr(anchored, "_import_campaign", lambda approval: imported.append(approval))
+    _refused(plan_path, tmp_path, calls, capsys, fragment="propriétaire du répertoire")
+    assert imported == []
 
 
 def test_refusal_without_the_environment_variable(host_approval, plan_path, tmp_path, calls, capsys, monkeypatch):
@@ -300,6 +412,7 @@ def _scenario(name, tmp_path, witness):
     verifier = tree / "scripts" / "seal_circuit2_launcher.py"
     host = tmp_path / "host"
     host.mkdir()
+    os.chmod(host, 0o755)
     if name == "altered_launcher_recomputed_seal":
         assert _approved(launcher) != _approved(REAL_LAUNCHER)
         assert _approved(seal) != _approved(REAL_SEAL)
@@ -347,6 +460,7 @@ def test_a_fake_approval_created_by_the_candidate_is_refused(entry, tmp_path):
     tree, launcher, seal = _candidate_tree(tmp_path, witness, stub=True)
     host = tmp_path / "host"
     host.mkdir()
+    os.chmod(host, 0o755)
     verifier = tree / "scripts" / "seal_circuit2_launcher.py"
     approval = _write_approval(host / "approvals.json", _content(launcher, verifier, seal, seal))
     assert approval.stat().st_uid == os.geteuid()
